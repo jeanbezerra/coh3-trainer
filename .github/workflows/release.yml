@@ -27,12 +27,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "8.0.x"
 
@@ -107,7 +108,7 @@ jobs:
             -OutputPath ".\artifacts\release\release-notes.md"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CoH3-Resource-Trainer-${{ steps.metadata.outputs.tag }}-win-x64
           path: |

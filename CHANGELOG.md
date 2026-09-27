@@ -11,6 +11,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - GitHub Actions release automation that builds, tests, and publishes the self-contained Windows x64 executable.
 - Automatic release notes extracted from the matching version section in this changelog.
 - SHA-256 checksum generation for every downloadable release executable.
+- GitHub funding integration and a Buy Me a Coffee support link in the README footer.
+
+### Changed
+
+- Upgraded the official checkout, .NET setup, and artifact upload actions to Node.js 24-compatible releases.
+- Disabled persisted checkout credentials because release publishing authenticates explicitly through `GH_TOKEN`.
 
 ### Planned
 

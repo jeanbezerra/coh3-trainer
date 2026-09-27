@@ -245,3 +245,9 @@ Technical discovery details are documented in [docs/address-discovery.md](docs/a
 ## Credits
 
 **LordSteelHand** — creator and project originator.
+
+## Support this project
+
+CoH3 Resource Trainer is developed and maintained as a free open-source project. If it has been useful to you and you would like to support its continued development, you can make a voluntary donation through GitHub's **Sponsor** button or directly on [Buy Me a Coffee](https://buymeacoffee.com/jeanbezerra).
+
+Donations are appreciated but never required. Bug reports, feedback, documentation, code contributions, and sharing the project are also valuable ways to help.
