@@ -1,0 +1,172 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example, v1.0.0)"
+        required: true
+        default: "v1.0.0"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build Windows x64 release
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve release metadata
+        id: metadata
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $tag = if ($env:EVENT_NAME -eq "workflow_dispatch") {
+            $env:INPUT_TAG.Trim()
+          }
+          else {
+            $env:REF_NAME.Trim()
+          }
+
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "The release tag '$tag' must use the format vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-suffix."
+          }
+
+          $version = $Matches.version
+          $assetName = "CoH3-Resource-Trainer-$tag-win-x64.exe"
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "asset_name=$assetName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Restore dependencies
+        run: dotnet restore .\Coh3Trainer.sln
+
+      - name: Verify formatting
+        run: dotnet format .\Coh3Trainer.sln --verify-no-changes --no-restore --verbosity minimal
+
+      - name: Build Release
+        run: dotnet build .\Coh3Trainer.sln --configuration Release --no-restore -p:Version=${{ steps.metadata.outputs.version }}
+
+      - name: Run smoke tests
+        run: dotnet run --no-build --project .\tests\Coh3Trainer.SmokeTests\Coh3Trainer.SmokeTests.csproj --configuration Release
+
+      - name: Publish self-contained executable
+        run: >-
+          dotnet publish .\src\Coh3Trainer.App\Coh3Trainer.App.csproj
+          -p:PublishProfile=win-x64-single-file
+          -p:Version=${{ steps.metadata.outputs.version }}
+          --output .\artifacts\release
+
+      - name: Prepare release assets and notes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          ASSET_NAME: ${{ steps.metadata.outputs.asset_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $publishedExecutable = ".\artifacts\release\Coh3Trainer.exe"
+          $releaseExecutable = Join-Path ".\artifacts\release" $env:ASSET_NAME
+          if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
+            throw "Published executable was not found at $publishedExecutable."
+          }
+
+          Move-Item -LiteralPath $publishedExecutable -Destination $releaseExecutable
+          $hash = (Get-FileHash -LiteralPath $releaseExecutable -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($env:ASSET_NAME)" | Set-Content -LiteralPath ".\artifacts\release\SHA256SUMS.txt" -Encoding ascii
+
+          .\tools\get_release_notes.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -ChangelogPath ".\CHANGELOG.md" `
+            -OutputPath ".\artifacts\release\release-notes.md"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoH3-Resource-Trainer-${{ steps.metadata.outputs.tag }}-win-x64
+          path: |
+            artifacts/release/${{ steps.metadata.outputs.asset_name }}
+            artifacts/release/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          ASSET_NAME: ${{ steps.metadata.outputs.asset_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          try {
+            gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
+            $releaseExists = $LASTEXITCODE -eq 0
+          }
+          catch {
+            $releaseExists = $false
+          }
+          $title = "CoH3 Resource Trainer $($env:RELEASE_TAG)"
+          $notesPath = ".\artifacts\release\release-notes.md"
+
+          if ($releaseExists) {
+            gh release edit $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --title $title `
+              --notes-file $notesPath
+          }
+          else {
+            $arguments = @(
+              "release", "create", $env:RELEASE_TAG,
+              "--repo", $env:GITHUB_REPOSITORY,
+              "--target", $env:GITHUB_SHA,
+              "--title", $title,
+              "--notes-file", $notesPath
+            )
+
+            if ($env:RELEASE_VERSION.Contains("-")) {
+              $arguments += "--prerelease"
+            }
+
+            & gh @arguments
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release creation or update failed."
+          }
+
+          gh release upload $env:RELEASE_TAG `
+            ".\artifacts\release\$($env:ASSET_NAME)" `
+            ".\artifacts\release\SHA256SUMS.txt" `
+            --repo $env:GITHUB_REPOSITORY `
+            --clobber
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Uploading the GitHub Release assets failed."
+          }

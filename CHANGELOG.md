@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Actions release automation that builds, tests, and publishes the self-contained Windows x64 executable.
+- Automatic release notes extracted from the matching version section in this changelog.
+- SHA-256 checksum generation for every downloadable release executable.
+
 ### Planned
 
 - Additional live-match validation for player-wide squad actions.

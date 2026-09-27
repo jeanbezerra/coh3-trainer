@@ -161,9 +161,30 @@ The output is a self-contained Windows x64 executable. The embedded manifest use
 
 The project does not currently include a code-signing certificate. Distributed builds may therefore show **Unknown publisher** in UAC or trigger Microsoft Defender SmartScreen. Code signing is a release/distribution concern and is not bypassed by this project.
 
+## Automated GitHub releases
+
+The [release workflow](.github/workflows/release.yml) builds and publishes the Windows x64 executable whenever a semantic-version tag is pushed:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The same workflow can be started manually from **Actions → Build and publish release → Run workflow** by entering a tag such as `v1.0.0`.
+
+Before creating the tag, add a matching version section to `CHANGELOG.md`, for example `## [1.0.0] - 2026-09-27`. The workflow stops if that section is missing. Its contents become the GitHub Release description automatically.
+
+Each GitHub Release contains:
+
+- `CoH3-Resource-Trainer-vX.Y.Z-win-x64.exe`;
+- `SHA256SUMS.txt` for download verification.
+
+The workflow also keeps the same two files as a GitHub Actions artifact for that run. Re-running the workflow updates the release notes and replaces existing assets for the tag.
+
 ## Project structure
 
 ```text
+.github/workflows/              Automated build and GitHub Release publishing
 assets/                         Reusable application branding
 docs/                           Memory-layout and discovery notes
 profiles/                       Disabled external profile template
