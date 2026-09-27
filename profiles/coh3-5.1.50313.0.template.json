@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "coh3-5.1.50313.0-template",
+  "enabled": false,
+  "processName": "RelicCoH3",
+  "executableVersion": "5.1.50313.0",
+  "moduleName": "RelicCoH3.exe",
+  "resources": {
+    "Manpower": {
+      "baseOffset": "0x0",
+      "pointerOffsets": [],
+      "valueType": "Single",
+      "minimum": 0,
+      "maximum": 10000000
+    },
+    "Fuel": {
+      "baseOffset": "0x0",
+      "pointerOffsets": [],
+      "valueType": "Single",
+      "minimum": 0,
+      "maximum": 10000000
+    },
+    "Army": {
+      "baseOffset": "0x0",
+      "pointerOffsets": [],
+      "valueType": "Single",
+      "minimum": 0,
+      "maximum": 10000000
+    },
+    "CommandPoints": {
+      "baseOffset": "0x0",
+      "pointerOffsets": [],
+      "valueType": "Single",
+      "minimum": 0,
+      "maximum": 32
+    }
+  }
+}

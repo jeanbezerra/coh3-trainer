@@ -1,0 +1,279 @@
+<Window x:Class="Coh3Trainer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CoH3 Resource Trainer"
+        Width="820" Height="720" MinWidth="740" MinHeight="650"
+        Background="{StaticResource WindowBackground}"
+        Foreground="{StaticResource TextPrimary}"
+        FontFamily="Segoe UI"
+        WindowStartupLocation="CenterScreen"
+        Loaded="Window_Loaded" Closed="Window_Closed">
+    <DockPanel Background="{StaticResource WindowBackground}">
+        <Menu DockPanel.Dock="Top" AutomationProperties.Name="Menu principal">
+            <MenuItem Header="_CONFIGURAÇÕES">
+                <MenuItem Header="Idioma atual">
+                    <MenuItem x:Name="PortugueseLanguageMenuItem"
+                              Header="Português (Brasil)" IsCheckable="True" IsChecked="True"
+                              StaysOpenOnClick="True" Click="CurrentLanguageMenuItem_Click" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Abrir pasta de configurações" Click="OpenSettingsFolderMenuItem_Click" />
+                <MenuItem Header="Abrir pasta de logs" Click="OpenLogsFolderMenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="_AJUDA">
+                <MenuItem Header="Como usar" Click="HelpMenuItem_Click" />
+                <MenuItem Header="Colaboradores" Click="ContributorsMenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Sobre" Click="AboutMenuItem_Click" />
+            </MenuItem>
+        </Menu>
+
+        <Grid Margin="20" Background="{StaticResource WindowBackground}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock FontSize="26" FontWeight="SemiBold" Text="CoH3 Resource Trainer" />
+                <TextBlock Foreground="{StaticResource SecondaryText}"
+                           Text="Campanha e partidas solo/privadas contra IA" />
+            </StackPanel>
+            <Button x:Name="ConnectButton" Grid.Column="1" MinWidth="160" Height="38" VerticalAlignment="Center"
+                    Click="ConnectButton_Click" Content="CONECTAR"
+                    AutomationProperties.Name="Conectar ao Company of Heroes 3" />
+        </Grid>
+
+        <Border Grid.Row="1" Background="{StaticResource PanelBackground}"
+                BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                CornerRadius="6" Padding="12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Ellipse x:Name="StatusIndicator" Grid.Column="0" Width="10" Height="10"
+                         Fill="#9CA3AF" Margin="0,0,10,0" />
+                <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center"
+                           Text="Inicializando..." TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="VersionText" Grid.Column="2" Foreground="{StaticResource SecondaryText}"
+                           Margin="20,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" />
+            </Grid>
+        </Border>
+
+        <TabControl Grid.Row="2" Background="{StaticResource WindowBackground}" Foreground="{StaticResource TextPrimary}"
+                    BorderBrush="{StaticResource PanelBorder}">
+            <TabItem Header="TRAINER">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <Grid Margin="0,2,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="16" FontWeight="SemiBold"
+                                           Text="DADOS DO JOGADOR LOCAL • TEMPO REAL" />
+                                <TextBlock Foreground="{StaticResource SecondaryText}"
+                                           Text="Pressione a tecla configurada ou use o botão. Os valores são somados, não substituídos." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <TextBlock x:Name="IncomeMultiplierStatusText"
+                                           HorizontalAlignment="Right" FontWeight="SemiBold"
+                                           Text="RENDA PADRÃO" />
+                                <TextBlock x:Name="PopulationLimitStatusText"
+                                           HorizontalAlignment="Right" FontWeight="SemiBold"
+                                           Text="POP AGUARDANDO" />
+                                <TextBlock x:Name="LastUpdateText" HorizontalAlignment="Right"
+                                           Foreground="{StaticResource SecondaryText}" Text="Aguardando dados" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6" Padding="16" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="MANPOWER" />
+                                    <TextBlock x:Name="ManpowerValueText" FontSize="26" Foreground="{StaticResource TextPrimary}" Text="—" />
+                                </StackPanel>
+                                <TextBlock x:Name="ManpowerHotkeyText" Grid.Column="1" FontSize="18" VerticalAlignment="Center" TextAlignment="Center" Text="F6" />
+                                <Button x:Name="ManpowerAddButton" Grid.Column="2" Tag="Manpower"
+                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6" Padding="16" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="FUEL" />
+                                    <TextBlock x:Name="FuelValueText" FontSize="26" Foreground="{StaticResource TextPrimary}" Text="—" />
+                                </StackPanel>
+                                <TextBlock x:Name="FuelHotkeyText" Grid.Column="1" FontSize="18" VerticalAlignment="Center" TextAlignment="Center" Text="F7" />
+                                <Button x:Name="FuelAddButton" Grid.Column="2" Tag="Fuel"
+                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6" Padding="16" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="MUNIÇÕES" />
+                                    <TextBlock x:Name="ArmyValueText" FontSize="26" Foreground="{StaticResource TextPrimary}" Text="—" />
+                                </StackPanel>
+                                <TextBlock x:Name="ArmyHotkeyText" Grid.Column="1" FontSize="18" VerticalAlignment="Center" TextAlignment="Center" Text="F8" />
+                                <Button x:Name="ArmyAddButton" Grid.Column="2" Tag="Army"
+                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6" Padding="16" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="COMMAND POINTS" />
+                                    <TextBlock x:Name="CommandPointsValueText" FontSize="26"
+                                               Foreground="{StaticResource TextPrimary}" Text="—" />
+                                </StackPanel>
+                                <TextBlock x:Name="CommandPointsHotkeyText" Grid.Column="1" FontSize="18"
+                                           VerticalAlignment="Center" TextAlignment="Center" Text="F9" />
+                                <Button x:Name="CommandPointsAddButton" Grid.Column="2" Tag="CommandPoints"
+                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="CONFIGURAÇÃO">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Atalhos e quantidades" />
+                        <TextBlock Margin="0,4,0,14" Foreground="{StaticResource SecondaryText}"
+                                   Text="Cada atalho global aceita uma tecla entre F1 e F12." />
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="180" />
+                                <ColumnDefinition Width="120" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" Text="Manpower" />
+                            <TextBox x:Name="ManpowerAmountTextBox" Grid.Column="1" />
+                            <ComboBox x:Name="ManpowerHotkeyCombo" Grid.Column="2" />
+                        </Grid>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="180" />
+                                <ColumnDefinition Width="120" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" Text="Fuel" />
+                            <TextBox x:Name="FuelAmountTextBox" Grid.Column="1" />
+                            <ComboBox x:Name="FuelHotkeyCombo" Grid.Column="2" />
+                        </Grid>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="180" />
+                                <ColumnDefinition Width="120" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" Text="Munições" />
+                            <TextBox x:Name="ArmyAmountTextBox" Grid.Column="1" />
+                            <ComboBox x:Name="ArmyHotkeyCombo" Grid.Column="2" />
+                        </Grid>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="180" />
+                                <ColumnDefinition Width="120" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" Text="Command Points" />
+                            <TextBox x:Name="CommandPointsAmountTextBox" Grid.Column="1"
+                                     AutomationProperties.Name="Quantidade de Command Points" />
+                            <ComboBox x:Name="CommandPointsHotkeyCombo" Grid.Column="2" />
+                        </Grid>
+                        <Border Margin="0,8,0,8" Padding="12"
+                                Background="{StaticResource PanelBackground}"
+                                BorderBrush="{StaticResource PanelBorder}"
+                                BorderThickness="1" CornerRadius="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock FontWeight="SemiBold" Text="Multiplicador de renda" />
+                                    <TextBlock Margin="0,3,12,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Multiplica os ganhos observados de Manpower, Fuel e Munições." />
+                                </StackPanel>
+                                <ComboBox x:Name="IncomeMultiplierCombo" Grid.Column="1"
+                                          VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <Border Margin="0,0,0,8" Padding="12"
+                                Background="{StaticResource PanelBackground}"
+                                BorderBrush="{StaticResource PanelBorder}"
+                                BorderThickness="1" CornerRadius="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock FontWeight="SemiBold" Text="Limite de população" />
+                                    <TextBlock Margin="0,3,12,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Substitui o teto de população do jogador local durante a partida." />
+                                </StackPanel>
+                                <CheckBox x:Name="PopulationLimitEnabledCheckBox" Grid.Column="1"
+                                          VerticalAlignment="Center" Content="ATIVO"
+                                          Click="PopulationLimitEnabledCheckBox_Click" />
+                                <TextBox x:Name="PopulationLimitTextBox" Grid.Column="2"
+                                         VerticalAlignment="Center"
+                                         AutomationProperties.Name="Limite de população" />
+                            </Grid>
+                        </Border>
+                        <TextBlock Margin="4,8,4,12" TextWrapping="Wrap" Foreground="{StaticResource SecondaryText}"
+                                   Text="As alterações são aplicadas imediatamente e permanecem salvas para as próximas sessões." />
+                        <Button Width="190" HorizontalAlignment="Left" Click="SaveSettingsButton_Click" Content="SALVAR CONFIGURAÇÃO" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="3" Background="{StaticResource InputBackground}" BorderBrush="{StaticResource PanelBorder}"
+                BorderThickness="1" Padding="10" Margin="0,12,0,0" CornerRadius="4">
+            <TextBlock x:Name="EventText" Foreground="{StaticResource SecondaryText}"
+                       Text="Aguardando conexão." TextTrimming="CharacterEllipsis" />
+        </Border>
+        </Grid>
+    </DockPanel>
+</Window>
