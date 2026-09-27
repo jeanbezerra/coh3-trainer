@@ -1,5 +1,11 @@
 # CoH3 Resource Trainer
 
+<p align="center">
+  <a href="https://buymeacoffee.com/jeanbezerra">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&amp;emoji=&amp;slug=jeanbezerra&amp;button_colour=FFDD00&amp;font_colour=000000&amp;font_family=Cookie&amp;outline_colour=000000&amp;coffee_colour=ffffff" alt="Buy me a coffee" />
+  </a>
+</p>
+
 A Windows desktop trainer for studying the resource systems in **Company of Heroes 3** campaign and solo/private matches against AI.
 
 > [!WARNING]
