@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Interop;
+using System.Globalization;
 using Coh3Trainer.Interop;
 
 namespace Coh3Trainer;
@@ -9,7 +10,7 @@ public partial class InformationDialog : Window
     public InformationDialog(string section, string heading, string body)
     {
         InitializeComponent();
-        SectionText.Text = section.ToUpperInvariant();
+        SectionText.Text = section.ToUpper(CultureInfo.CurrentUICulture);
         HeadingText.Text = heading;
         BodyText.Text = body;
     }

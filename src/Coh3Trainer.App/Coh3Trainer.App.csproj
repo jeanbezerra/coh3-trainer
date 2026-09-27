@@ -9,12 +9,23 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Coh3Trainer</AssemblyName>
     <RootNamespace>Coh3Trainer</RootNamespace>
-    <ApplicationIcon />
+    <Version>1.0.0</Version>
+    <AssemblyTitle>CoH3 Resource Trainer</AssemblyTitle>
+    <Authors>LordSteelHand</Authors>
+    <Product>CoH3 Resource Trainer</Product>
+    <Description>Local resource trainer for Company of Heroes 3 campaign and private AI matches.</Description>
+    <ApplicationIcon>..\..\assets\branding\trainer.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="..\..\assets\branding\trainer.ico"
+              Link="Assets\trainer.ico" />
+    <Resource Include="..\..\assets\branding\trainer-icon-master.png"
+              Link="Assets\trainer-icon-master.png" />
     <None Include="..\..\profiles\*.json"
           Link="profiles\%(Filename)%(Extension)"
-          CopyToOutputDirectory="PreserveNewest" />
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>

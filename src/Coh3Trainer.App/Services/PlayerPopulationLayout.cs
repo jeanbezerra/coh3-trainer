@@ -17,7 +17,7 @@ public static class PlayerPopulationLayout
         {
             throw new ArgumentOutOfRangeException(
                 nameof(personnelLimit),
-                $"O limite deve estar entre {PopulationLimitRules.MinimumLimit} e {PopulationLimitRules.MaximumLimit}.");
+                $"The limit must be between {PopulationLimitRules.MinimumLimit} and {PopulationLimitRules.MaximumLimit}.");
         }
 
         var buffer = new byte[OverrideSize];

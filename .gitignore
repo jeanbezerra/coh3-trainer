@@ -1,6 +1,11 @@
-bin/
-obj/
+**/bin/
+**/obj/
 .vs/
+.vscode/
+artifacts/
+TestResults/
+coverage/
 *.user
 *.suo
-artifacts/
+*.log
+*.tmp

@@ -1,83 +1,226 @@
 # CoH3 Resource Trainer
 
-Trainer experimental para estudar recursos do **Company of Heroes 3** em campanha e partidas solo/privadas contra IA.
+A Windows desktop trainer for studying the resource systems in **Company of Heroes 3** campaign and solo/private matches against AI.
 
-> Uma sessão contra IA pode utilizar os serviços online do jogo. O limite deste projeto é o tipo de partida: não use em partidas com outros jogadores humanos.
+> [!WARNING]
+> Use this project only in campaign or matches without other human players. A match against AI may still use the game's online services. This project does not claim compatibility with competitive or public multiplayer sessions.
 
-## Recursos do MVP
+## Current status
 
-- Atalhos globais configuráveis entre `F1` e `F12`.
-- Padrões ativos: `F6` para Manpower, `F7` para Fuel, `F8` para Munições e `F9` para Command Points.
-- Quantidade de cada incremento configurável pela interface.
-- Configuração persistida em `%LOCALAPPDATA%\Coh3Trainer\settings.json`.
-- Log diário em `%LOCALAPPDATA%\Coh3Trainer\logs\trainer-AAAA-MM-DD.log`.
-- Menu superior com idioma atual, acesso às pastas do aplicativo, ajuda, colaboradores e informações da versão.
-- Conexão com `RelicCoH3.exe` em 64 bits.
-- Conexão automática ao abrir o trainer, com tentativa manual quando o jogo ainda não estiver aberto.
-- Identificação automática do jogador local por assinatura de código.
-- Leitura dos recursos do jogador local a cada 250 ms.
-- Command Points em tempo real, com incremento configurável de `1` a `32` e padrão de `+5`.
-- Multiplicador de renda configurável em `1x`, `2x`, `3x` ou `5x` para Manpower, Fuel e Munições.
-- Limite de população configurável entre `100` e `1.000`, aplicado ao jogador local.
-- Perfis externos opcionais vinculados à versão exata do executável.
-- Validação antes da escrita e releitura do valor gravado.
+The current memory layouts and native entry points are validated for Company of Heroes 3 version `5.1.50313.0`. Economic resource discovery uses code signatures, while version-sensitive features remain disabled when the executable version does not match exactly.
 
-## Executar
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Manpower, Fuel, and Munitions | Available | Live readout and configurable increments |
+| Command Points | Available | Configurable increments from 1 to 32 |
+| Income multiplier | Available | `1x`, `2x`, `3x`, or `5x` for observed economic income |
+| Population cap | Available | Configurable from 100 to 1,000 on the validated game version |
+| Match dashboard | Available | Session state, elapsed observation time, values, and net change per minute |
+| Squad veterancy, healing, and cooldowns | Experimental | Applies to every squad owned by the local player |
+| Victory Points | Not exposed | The authoritative ticket score has not yet been integrated safely |
 
-Requisitos: Windows 10/11 x64 e .NET 8 Desktop Runtime.
+## Features
+
+- Automatic connection to the active 64-bit `RelicCoH3.exe` process.
+- Local-player discovery through validated executable signatures.
+- Real-time resource sampling every 250 milliseconds.
+- Configurable global hotkeys from `F1` through `F12`.
+- Default hotkeys:
+  - `F6`: Manpower
+  - `F7`: Fuel
+  - `F8`: Munitions
+  - `F9`: Command Points
+- Configurable resource increments with validation and write confirmation.
+- Mirrored Command Point writes with rollback if either value cannot be confirmed.
+- Income tracking that distinguishes small observed gains from spending and manual trainer writes.
+- Population-cap override with preservation and restoration of the original game value.
+- Player-wide squad actions executed from the game's own simulation path:
+  - promote all squads by one veterancy rank;
+  - restore all squad members to full health;
+  - clear remaining squad ability cooldowns.
+- Match dashboard with a rolling 60-second net-change calculation.
+- Persistent settings stored under the current Windows user profile.
+- Daily application logs.
+- Dark charcoal interface with a larger `1060 × 820` workspace and scrollable tabs.
+- Runtime language switching between:
+  - Portuguese (Brazil), `pt-BR`;
+  - English, `en-US`;
+  - Simplified Chinese, `zh-CN`;
+  - Spanish, `es-ES`.
+- Settings, logs, help, contributors, and application information menus.
+- Reusable application branding for this trainer family.
+- Single-instance protection to prevent multiple trainers from competing for the same hooks.
+- Windows UAC manifest that requests administrator access before startup.
+- Self-contained, single-file Windows x64 publishing profile.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
+## Requirements
+
+For the distributed executable:
+
+- Windows 10 or Windows 11, x64;
+- Company of Heroes 3;
+- administrator approval at startup.
+
+The self-contained release does not require a separate .NET installation.
+
+For development:
+
+- .NET 8 SDK;
+- Windows x64;
+- PowerShell for the helper scripts.
+
+## Running from source
 
 ```powershell
 dotnet run --project .\src\Coh3Trainer.App\Coh3Trainer.App.csproj
 ```
 
-Abra o CoH3 normalmente. O trainer tenta conectar automaticamente ao iniciar. Se o jogo ainda não estiver aberto, inicie-o e use **Tentar novamente**. Na guia **Configuração**:
+Open Company of Heroes 3 normally. The trainer attempts to connect during startup. If the game is not running yet, start it and select **Try again**.
 
-1. Ajuste as quantidades, as teclas, o multiplicador de renda e o limite de população.
-2. Salve a configuração.
-3. Entre em uma campanha ou partida solo/privada contra IA.
+The connection button reflects the active workflow: **Connecting**, **Try again**, **Disconnect**, or the ready state. The trainer does not launch the game, add development arguments, or modify the game's command line.
 
-O botão acompanha o fluxo completo: **Conectando**, **Tentar novamente** quando o jogo não é encontrado e **Desconectar** quando a sessão está ativa. Salvar atalhos e quantidades não interrompe nem recria a conexão.
+## Usage
 
-O multiplicador de renda atua sobre os incrementos positivos observados pelo trainer. Gastos, alterações manuais e saltos fora da faixa de renda normal não são multiplicados. Selecionar `1x` restaura o comportamento padrão imediatamente.
+1. Start Company of Heroes 3.
+2. Start the trainer and approve the Windows administrator prompt.
+3. Enter a campaign or solo/private match against AI.
+4. Wait until the connection status reports that resources are available.
+5. Use the resource buttons or configured function keys.
+6. Use the **Units** tab for the experimental player-wide squad actions.
+7. Adjust hotkeys, amounts, income, and population settings in the **Settings** tab.
 
-Command Points são tratados separadamente da renda. O botão e o atalho somam a quantidade configurada até o limite seguro de `32`. O trainer atualiza o valor corrente e o espelho consultado pelo SCAR na mesma operação; se uma das duas gravações não for confirmada, os valores anteriores são restaurados.
+Resource increments are added to the current value; they do not replace it.
 
-O limite de população inicia ativo em `250`. O indicador `POP` mostra **aguardando** até o jogador local estar disponível e passa a exibir o valor quando a alteração é confirmada. Desmarcar **Ativo** restaura o override que existia antes da aplicação do trainer. Por segurança, esse recurso exige a versão validada `5.1.50313.0`; em outra versão, a configuração permanece salva, mas a memória não é alterada.
+### Income multiplier
 
-No menu **Configurações**, é possível consultar o idioma atual e abrir diretamente as pastas de configurações e logs. O menu **Ajuda** contém o guia rápido, as informações da versão e o modal de colaboradores. **LordSteelHand** é creditado como idealizador do projeto.
+The multiplier watches positive Manpower, Fuel, and Munitions changes. A small detected gain receives an additional bonus of:
 
-Não há calibração manual. Ao conectar, o trainer valida uma assinatura completa do código do jogo e aguarda o objeto do jogador local aparecer. Dentro da partida, Manpower, Fuel e Munições são atualizados na tela em tempo real.
+```text
+observed gain × (configured multiplier - 1)
+```
 
-O suporte a Victory Points permanece em desenvolvimento e não é exposto na interface estável. A investigação mostrou que `player + 0x438` conta os pontos do mapa controlados pelo jogador; o placar restante é composto por tickets mantidos pela simulação SCAR. Por segurança, nenhum atalho é registrado para Victory Points até existir uma integração executada na thread da simulação.
+Spending, reductions, large jumps, and writes made directly by the trainer are excluded. Selecting `1x` restores the default behavior immediately.
 
-## Estrutura
+### Command Points
 
-As responsabilidades estão separadas por contratos: `ITrainerBackend` isola a integração com o jogo, `ISettingsStore` isola a persistência, `ITrainerSettingsValidator` valida e aplica a configuração de forma atômica, `IncomeMultiplierTracker` calcula os bônus sem acoplamento à memória, e as regras/layouts de Command Points e população ficam em componentes próprios. `IAppLogger` registra eventos e `IShellService` integra a abertura de pastas. A interface consome esses contratos e reage aos estados de conexão e dos recursos sem depender das implementações concretas.
+Command Points are handled separately from economic income. The trainer updates the current resource value and the mirror used by the SCAR binding. Both writes must be confirmed; otherwise, the original values are restored.
 
-Se uma atualização tornar a assinatura incompatível, a conexão é recusada antes de qualquer alteração. Feche o trainer antes de entrar em uma partida com jogadores humanos.
+### Population cap
 
-## Compilar e verificar
+The default trainer setting is enabled at `250`. The status remains in a waiting state until the local player is available. Disabling the feature or disconnecting restores the original 12-byte population override captured before the trainer changed it.
+
+### Squad actions
+
+The **Units** tab operates on every squad owned by the local player; no UI selection is required. Requests are placed in a small shared dispatch area and consumed by a hook already running in the game's execution path. Native simulation functions are never invoked from a trainer-created remote thread.
+
+These actions are experimental and version-gated. The interface reports how many squads were processed, returns a safe error when no squads are available, and times out if the game does not consume the request.
+
+## Application data
+
+The trainer stores user data outside the installation directory:
+
+```text
+%LOCALAPPDATA%\Coh3Trainer\settings.json
+%LOCALAPPDATA%\Coh3Trainer\logs\trainer-YYYY-MM-DD.log
+```
+
+Both directories can be opened from the application menu.
+
+## Build and test
 
 ```powershell
 dotnet build .\Coh3Trainer.sln -c Release
 dotnet run --project .\tests\Coh3Trainer.SmokeTests\Coh3Trainer.SmokeTests.csproj -c Release
 ```
 
-Com o jogo aberto, a conexão sem escrita também pode ser validada com:
+With the game already open, a read-only integration check can also be run:
 
 ```powershell
 dotnet run --project .\tests\Coh3Trainer.SmokeTests\Coh3Trainer.SmokeTests.csproj -c Release -- --game-integration
 ```
 
-## Perfis opcionais
+The integration check does not invoke resource writes or squad actions.
 
-O diretório `profiles` contém um modelo desabilitado para compatibilidade com versões que tenham cadeias de ponteiros já validadas. Nunca habilite um perfil com offsets `0x0`.
+## Publish a distributable executable
 
-Cada recurso aceita:
+```powershell
+dotnet publish .\src\Coh3Trainer.App\Coh3Trainer.App.csproj `
+  -p:PublishProfile=win-x64-single-file `
+  -o .\artifacts\Coh3Trainer-win-x64-admin
+```
 
-- `baseOffset`: deslocamento relativo ao módulo.
-- `pointerOffsets`: cadeia de ponteiros, em hexadecimal.
-- `valueType`: `Int32` ou `Single`.
-- `minimum` e `maximum`: faixa aceita antes de qualquer escrita.
+The result is:
 
-O backend somente carrega um perfil quando `enabled` é `true` e a versão do executável coincide exatamente. Sem perfil, utiliza a identificação automática por assinatura.
+```text
+artifacts\Coh3Trainer-win-x64-admin\Coh3Trainer.exe
+```
+
+The output is a self-contained Windows x64 executable. The embedded manifest uses `requireAdministrator`, so Windows displays a UAC prompt before the process starts.
+
+The project does not currently include a code-signing certificate. Distributed builds may therefore show **Unknown publisher** in UAC or trigger Microsoft Defender SmartScreen. Code signing is a release/distribution concern and is not bypassed by this project.
+
+## Project structure
+
+```text
+assets/                         Reusable application branding
+docs/                           Memory-layout and discovery notes
+profiles/                       Disabled external profile template
+src/Coh3Trainer.App/            WPF application
+  Interop/                      Native Windows API declarations
+  Localization/                 Runtime translation catalogs
+  Models/                       Settings, rules, and profile models
+  Services/                     Backend, persistence, hotkeys, telemetry, and hooks
+  Properties/PublishProfiles/   Single-file publishing configuration
+tests/Coh3Trainer.SmokeTests/   Executable smoke-test suite
+tools/                          Read-only analysis and branding helpers
+```
+
+The main responsibilities are separated behind contracts:
+
+- `ITrainerBackend` isolates game-process integration from the UI.
+- `ISettingsStore` owns settings persistence.
+- `ITrainerSettingsValidator` validates settings atomically.
+- `IncomeMultiplierTracker` calculates income bonuses without memory-access dependencies.
+- `MatchDashboardTracker` owns session and telemetry calculations.
+- version-specific Command Point, population, and squad-action layouts are isolated in dedicated types.
+- `IAppLogger` and `IShellService` isolate logging and Windows shell integration.
+
+## External profiles
+
+The repository includes `profiles/coh3-5.1.50313.0.template.json` as a disabled development template. It is intentionally excluded from the single-file release.
+
+To use a separately validated external profile, create a `profiles` directory next to the executable. A profile is loaded only when all of the following match:
+
+- `enabled` is `true`;
+- `schemaVersion` is supported;
+- process name and executable version match exactly;
+- every initial value is readable and inside its configured safe range.
+
+Never enable a template that still contains placeholder offsets such as `0x0`.
+
+## Safety and compatibility
+
+- Every patched instruction sequence is checked before a hook is installed or recovered.
+- Updated game versions do not inherit version-sensitive offsets automatically.
+- Resource writes are range-checked and read back after writing.
+- Mirrored writes roll back when confirmation fails.
+- Original hook instructions are restored during a normal disconnect.
+- Population data is restored when the feature is disabled or the trainer disconnects.
+- Only one trainer instance is allowed per Windows session.
+
+Close the trainer before entering any match that contains other human players.
+
+## Known limitations
+
+- Game updates may disable features until signatures and layouts are validated again.
+- Squad veterancy, healing, and cooldown actions remain experimental until they receive broader live-match validation.
+- Victory Point tickets are controlled by the authoritative match simulation and are not currently exposed.
+- The income multiplier observes net changes in 250 ms samples; simultaneous income and spending may be represented only by their net result.
+
+Technical discovery details are documented in [docs/address-discovery.md](docs/address-discovery.md).
+
+## Credits
+
+**LordSteelHand** — creator and project originator.

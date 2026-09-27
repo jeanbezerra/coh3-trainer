@@ -41,7 +41,7 @@ public sealed class ProfileRepository
             }
             catch
             {
-                // Um perfil inválido é ignorado; o backend usará a identificação automática.
+                // Invalid profiles are ignored so the backend can fall back to automatic discovery.
             }
         }
 

@@ -1,10 +1,12 @@
 using System.Text.Json.Serialization;
+using Coh3Trainer.Localization;
 
 namespace Coh3Trainer.Models;
 
 public sealed class TrainerSettings
 {
     public Dictionary<ResourceKind, ResourceBindingSettings> Resources { get; set; } = CreateDefaults();
+    public string Culture { get; set; } = "pt-BR";
     public double IncomeMultiplier { get; set; } = 1;
     public PopulationLimitSettings PopulationLimit { get; set; } = new();
 
@@ -26,6 +28,8 @@ public sealed class TrainerSettings
 
     public void Normalize()
     {
+        Culture = LocalizationService.NormalizeCultureName(Culture);
+
         if (!IsIncomeMultiplierSupported(IncomeMultiplier))
         {
             IncomeMultiplier = 1;
@@ -39,6 +43,7 @@ public sealed class TrainerSettings
 
         Resources ??= new Dictionary<ResourceKind, ResourceBindingSettings>();
         var defaults = CreateDefaults();
+        var usedHotkeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kind in AllResources)
         {
             if (!Resources.TryGetValue(kind, out var item) || item is null)
@@ -50,9 +55,18 @@ public sealed class TrainerSettings
             item.Amount = kind == ResourceKind.CommandPoints
                 ? Math.Clamp(item.Amount, CommandPointRules.MinimumIncrement, CommandPointRules.MaximumPoints)
                 : Math.Clamp(item.Amount, 1, 1_000_000);
-            if (!IsFunctionKey(item.Hotkey))
+            var isEnabledResource = EnabledResources.Contains(kind);
+            if (!IsFunctionKey(item.Hotkey) ||
+                (isEnabledResource && usedHotkeys.Contains(item.Hotkey)))
             {
                 item.Hotkey = defaults[kind].Hotkey;
+            }
+
+            if (isEnabledResource && !usedHotkeys.Add(item.Hotkey))
+            {
+                item.Hotkey = Enumerable.Range(1, 12)
+                    .Select(number => $"F{number}")
+                    .First(key => usedHotkeys.Add(key));
             }
         }
     }

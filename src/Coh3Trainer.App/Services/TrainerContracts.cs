@@ -19,6 +19,13 @@ public enum PopulationLimitState
     Unsupported
 }
 
+public enum PlayerSquadAction
+{
+    PromoteVeterancy = 1,
+    Heal = 2,
+    ResetCooldowns = 3
+}
+
 public static class TrainerConnectionStateExtensions
 {
     public static bool IsConnected(this TrainerConnectionState state) =>
@@ -41,9 +48,11 @@ public interface ITrainerBackend : IDisposable
     int PopulationLimit { get; }
     bool IsPopulationLimitApplied { get; }
     PopulationLimitState PopulationLimitState { get; }
+    bool SupportsPlayerSquadActions { get; }
     Task<TrainerResult> ConnectAsync();
     Task<IReadOnlyDictionary<ResourceKind, double?>> ReadResourcesAsync();
     Task<TrainerResult> AddResourceAsync(ResourceKind resource, int amount);
+    Task<TrainerResult> ExecutePlayerSquadActionAsync(PlayerSquadAction action);
     TrainerResult ConfigureIncomeMultiplier(double multiplier);
     TrainerResult ConfigurePopulationLimit(bool enabled, int limit);
     void Disconnect();

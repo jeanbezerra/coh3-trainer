@@ -4,6 +4,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Coh3Trainer.Interop;
+using Coh3Trainer.Localization;
 using Coh3Trainer.Models;
 using Coh3Trainer.Services;
 
@@ -18,7 +19,9 @@ public partial class MainWindow : Window
     private readonly IApplicationPaths _applicationPaths;
     private readonly IAppLogger _logger;
     private readonly IShellService _shellService;
+    private readonly LocalizationService _localizer = LocalizationService.Current;
     private readonly DispatcherTimer _refreshTimer;
+    private readonly MatchDashboardTracker _matchDashboard = new();
     private TrainerSettings _settings;
     private HotkeyService? _hotkeys;
     private bool _busy;
@@ -54,6 +57,7 @@ public partial class MainWindow : Window
         _logger = logger;
         _shellService = shellService;
         _settings = _settingsStore.Load();
+        _localizer.SetCulture(_settings.Culture);
         _backend.ConfigureIncomeMultiplier(_settings.IncomeMultiplier);
         _backend.ConfigurePopulationLimit(_settings.PopulationLimit.Enabled, _settings.PopulationLimit.Limit);
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
@@ -63,7 +67,10 @@ public partial class MainWindow : Window
         UpdateHotkeyLabels();
         UpdateIncomeMultiplierStatus();
         UpdatePopulationLimitStatus();
-        _logger.Write("Trainer iniciado.");
+        UpdateMatchDashboard(_matchDashboard.Current);
+        UpdateLastUpdateText(_matchDashboard.Current);
+        UpdateLanguageMenuChecks();
+        _logger.Write(L("Log.Started"));
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -71,7 +78,7 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         var handle = new WindowInteropHelper(this).Handle;
         NativeMethods.EnableDarkTitleBar(handle);
-        _hotkeys = new HotkeyService(handle);
+        _hotkeys = new HotkeyService(handle, _localizer);
         _hotkeys.Pressed += Hotkeys_Pressed;
         RegisterHotkeys();
     }
@@ -87,45 +94,59 @@ public partial class MainWindow : Window
         _refreshTimer.Stop();
         _hotkeys?.Dispose();
         _backend.Dispose();
-        _logger.Write("Trainer encerrado.");
+        _logger.Write(L("Log.Closed"));
     }
 
-    private void CurrentLanguageMenuItem_Click(object sender, RoutedEventArgs e)
+    private void LanguageMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        PortugueseLanguageMenuItem.IsChecked = true;
-        ShowEvent("Idioma atual: Português (Brasil).");
+        if (sender is not MenuItem { Tag: string cultureName } ||
+            !LocalizationService.IsSupportedCulture(cultureName))
+        {
+            return;
+        }
+
+        _localizer.SetCulture(cultureName);
+        _settings.Culture = _localizer.CultureName;
+        UpdateLanguageMenuChecks();
+        ApplyLocalizedState();
+        var language = LocalizationService.SupportedLanguages.First(
+            option => option.CultureName == _localizer.CultureName);
+        try
+        {
+            _settingsStore.Save(_settings);
+            ShowEvent(L("Event.LanguageChanged", language.DisplayName));
+        }
+        catch (Exception ex)
+        {
+            ShowEvent(L("Event.ErrorSaving", ex.Message));
+        }
     }
 
     private void OpenSettingsFolderMenuItem_Click(object sender, RoutedEventArgs e) =>
-        OpenFolder(_applicationPaths.DataDirectory, "Pasta de configurações aberta.");
+        OpenFolder(_applicationPaths.DataDirectory, L("Event.SettingsFolderOpened"));
 
     private void OpenLogsFolderMenuItem_Click(object sender, RoutedEventArgs e) =>
-        OpenFolder(_applicationPaths.LogsDirectory, "Pasta de logs aberta.");
+        OpenFolder(_applicationPaths.LogsDirectory, L("Event.LogsFolderOpened"));
 
     private void HelpMenuItem_Click(object sender, RoutedEventArgs e) =>
         ShowInformationDialog(
-            "AJUDA",
-            "Como usar",
-            "1. Abra o Company of Heroes 3.\n" +
-            "2. Aguarde a conexão automática ou use Tentar novamente.\n" +
-            "3. Entre em uma partida compatível.\n" +
-            "4. Use os botões ou os atalhos configurados para adicionar recursos.\n" +
-            "5. Command Points usam F9 e adicionam 5 pontos por padrão.\n" +
-            "6. Ajuste o multiplicador de renda e o limite de população na guia Configuração.");
+            L("Info.HelpSection"),
+            L("Info.HelpHeading"),
+            L("Info.HelpBody"));
 
     private void ContributorsMenuItem_Click(object sender, RoutedEventArgs e) =>
         ShowInformationDialog(
-            "COLABORADORES",
+            L("Info.ContributorsSection"),
             "LordSteelHand",
-            "Idealizador do CoH3 Resource Trainer e responsável pela visão do projeto.");
+            L("Info.ContributorsBody"));
 
     private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
         ShowInformationDialog(
-            "SOBRE",
-            "CoH3 Resource Trainer",
-            $"Versão {version}\n\nFerramenta local para campanha e partidas solo ou privadas contra IA.");
+            L("Info.AboutSection"),
+            L("App.Title"),
+            L("Info.AboutBody", version));
     }
 
     private void OpenFolder(string path, string successMessage)
@@ -137,7 +158,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowEvent($"Não foi possível abrir a pasta: {ex.Message}");
+            ShowEvent(L("Event.CannotOpenFolder", ex.Message));
         }
     }
 
@@ -216,12 +237,13 @@ public partial class MainWindow : Window
             UpdateHotkeyLabels();
             UpdateIncomeMultiplierStatus();
             UpdatePopulationLimitStatus();
+            UpdateMatchDashboardFeatures();
             RegisterHotkeys();
-            ShowEvent($"Configuração salva. {incomeResult.Message} {populationResult.Message}");
+            ShowEvent(L("Event.SettingsSaved", incomeResult.Message, populationResult.Message));
         }
         catch (Exception ex)
         {
-            ShowEvent($"Erro ao salvar: {ex.Message}");
+            ShowEvent(L("Event.ErrorSaving", ex.Message));
         }
     }
 
@@ -236,7 +258,7 @@ public partial class MainWindow : Window
                 out var incomeMultiplier) ||
             !TrainerSettings.IsIncomeMultiplierSupported(incomeMultiplier))
         {
-            message = "Selecione um multiplicador de renda válido.";
+            message = L("Validation.SelectIncome");
             return false;
         }
 
@@ -285,7 +307,7 @@ public partial class MainWindow : Window
         {
             _backend.Disconnect();
             ClearResourceValues();
-            ShowEvent("Jogo desconectado.");
+            ShowEvent(L("Event.GameDisconnected"));
             UpdateStatus();
         }
         finally
@@ -305,7 +327,7 @@ public partial class MainWindow : Window
         _busy = true;
         _connecting = true;
         ClearResourceValues();
-        ShowEvent("Conectando ao jogo...");
+        ShowEvent(L("Event.Connecting"));
         try
         {
             var connectionTask = _backend.ConnectAsync();
@@ -321,7 +343,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _backend.Disconnect();
-            ShowEvent($"Falha ao conectar: {ex.Message}");
+            ShowEvent(L("Event.ConnectionFailed", ex.Message));
             UpdateStatus();
         }
         finally
@@ -370,6 +392,34 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void PlayerSquadActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy ||
+            sender is not Button { Tag: string tag } ||
+            !Enum.TryParse<PlayerSquadAction>(tag, out var action))
+        {
+            return;
+        }
+
+        _busy = true;
+        UpdatePlayerSquadActionsState();
+        try
+        {
+            ShowEvent(L("Event.UnitActionQueued"));
+            var result = await _backend.ExecutePlayerSquadActionAsync(action);
+            ShowEvent(result.Message);
+        }
+        catch (Exception ex)
+        {
+            ShowEvent(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            UpdatePlayerSquadActionsState();
+        }
+    }
+
     private async void RefreshTimer_Tick(object? sender, EventArgs e)
     {
         if (!_busy)
@@ -391,16 +441,14 @@ public partial class MainWindow : Window
                 CommandPointsValueText,
                 CommandPointsAddButton,
                 values[ResourceKind.CommandPoints]);
+            var dashboardSnapshot = _matchDashboard.Update(DateTimeOffset.Now, values);
+            UpdateMatchDashboard(dashboardSnapshot);
             UpdatePopulationLimitStatus();
-            LastUpdateText.Text = values
-                .Where(pair => pair.Key != ResourceKind.VictoryPoints)
-                .Any(pair => pair.Value.HasValue)
-                ? $"Atualizado {DateTime.Now:HH:mm:ss.fff}"
-                : "Aguardando dados";
+            UpdateLastUpdateText(dashboardSnapshot);
         }
         catch (Exception ex)
         {
-            ShowEvent($"Falha de leitura: {ex.Message}");
+            ShowEvent(L("Event.ReadFailed", ex.Message));
         }
     }
 
@@ -414,7 +462,10 @@ public partial class MainWindow : Window
         FuelAddButton.IsEnabled = false;
         ArmyAddButton.IsEnabled = false;
         CommandPointsAddButton.IsEnabled = false;
-        LastUpdateText.Text = "Aguardando dados";
+        UpdatePlayerSquadActionsState();
+        LastUpdateText.Text = L("Status.WaitingData");
+        _matchDashboard.Reset();
+        UpdateMatchDashboard(_matchDashboard.Current);
     }
 
     private void RegisterHotkeys()
@@ -442,19 +493,21 @@ public partial class MainWindow : Window
     private void UpdateIncomeMultiplierStatus()
     {
         IncomeMultiplierStatusText.Text = _settings.IncomeMultiplier <= 1
-            ? "RENDA PADRÃO"
-            : $"RENDA {_settings.IncomeMultiplier:0.#}x";
+            ? L("Income.DefaultShort")
+            : L("Income.MultiplierShort", _settings.IncomeMultiplier);
+        UpdateMatchDashboardFeatures();
     }
 
     private void UpdatePopulationLimitStatus()
     {
         PopulationLimitStatusText.Text = _backend.PopulationLimitState switch
         {
-            PopulationLimitState.Active => $"POP {_backend.PopulationLimit:N0}",
-            PopulationLimitState.Disabled => "POP PADRÃO",
-            PopulationLimitState.Unsupported => "POP INDISPONÍVEL",
-            _ => $"POP {_backend.PopulationLimit:N0} • AGUARDANDO"
+            PopulationLimitState.Active => L("Population.ShortActive", _backend.PopulationLimit),
+            PopulationLimitState.Disabled => L("Population.ShortDefault"),
+            PopulationLimitState.Unsupported => L("Population.ShortUnavailable"),
+            _ => L("Population.ShortWaiting", _backend.PopulationLimit)
         };
+        UpdateMatchDashboardFeatures();
     }
 
     private void UpdateStatus()
@@ -462,7 +515,7 @@ public partial class MainWindow : Window
         StatusText.Text = _backend.StatusMessage;
         var showVersion = _backend.State.IsConnected() && _backend.GameVersion != "—";
         VersionText.Visibility = showVersion ? Visibility.Visible : Visibility.Collapsed;
-        VersionText.Text = showVersion ? $"Versão {_backend.GameVersion}" : string.Empty;
+        VersionText.Text = showVersion ? L("Dashboard.Version", _backend.GameVersion) : string.Empty;
         StatusIndicator.Fill = _backend.State switch
         {
             TrainerConnectionState.Ready => new SolidColorBrush(Color.FromRgb(34, 197, 94)),
@@ -473,14 +526,36 @@ public partial class MainWindow : Window
         };
         UpdateConnectionButton();
         UpdatePopulationLimitStatus();
+        UpdatePlayerSquadActionsState();
+        UpdateMatchDashboardConnectionState(_matchDashboard.Current);
+    }
+
+    private void UpdatePlayerSquadActionsState()
+    {
+        var available = !_busy &&
+                        _backend.State == TrainerConnectionState.Ready &&
+                        _backend.SupportsPlayerSquadActions;
+        PromoteVeterancyButton.IsEnabled = available;
+        HealAllButton.IsEnabled = available;
+        ResetCooldownsButton.IsEnabled = available;
+
+        SquadActionsAvailabilityText.Text = !_backend.State.IsConnected()
+            ? L("Units.ConnectHint")
+            : !_backend.SupportsPlayerSquadActions
+                ? L("Units.Unsupported", _backend.GameVersion)
+                : _backend.State != TrainerConnectionState.Ready
+                    ? L("Units.WaitingMatch")
+                    : _busy
+                        ? L("Units.Executing")
+                        : L("Units.Ready");
     }
 
     private void UpdateConnectionButton()
     {
         if (_connecting || _backend.State == TrainerConnectionState.Connecting)
         {
-            ConnectButton.Content = "CONECTANDO...";
-            ConnectButton.ToolTip = "Conexão em andamento";
+            ConnectButton.Content = L("Action.Connecting");
+            ConnectButton.ToolTip = L("Tooltip.Connecting");
             ConnectButton.IsEnabled = false;
             return;
         }
@@ -488,11 +563,11 @@ public partial class MainWindow : Window
         var connectedToGame = _backend.State.IsConnected();
         ConnectButton.IsEnabled = true;
         ConnectButton.Content = connectedToGame
-            ? "DESCONECTAR"
-            : _backend.State == TrainerConnectionState.Error ? "TENTAR NOVAMENTE" : "CONECTAR";
+            ? L("Action.Disconnect")
+            : _backend.State == TrainerConnectionState.Error ? L("Action.Retry") : L("Action.Connect");
         ConnectButton.ToolTip = connectedToGame
-            ? "Encerrar a conexão com o processo do jogo"
-            : "Localizar o Company of Heroes 3";
+            ? L("Tooltip.Disconnect")
+            : L("Tooltip.Connect");
     }
 
     private void ShowEvent(string message)
@@ -505,6 +580,119 @@ public partial class MainWindow : Window
     private static string FormatValue(double? value) => value.HasValue ? value.Value.ToString("N0") : "—";
 
     private static string FormatIncomeMultiplier(double multiplier) => $"{multiplier:0.#}x";
+
+    private void UpdateMatchDashboard(MatchDashboardSnapshot snapshot)
+    {
+        MatchElapsedText.Text = $"{(int)snapshot.Elapsed.TotalHours:00}:{snapshot.Elapsed.Minutes:00}:{snapshot.Elapsed.Seconds:00}";
+        MatchLastSampleText.Text = snapshot.LastUpdatedAt.HasValue
+            ? L("Dashboard.LastSample", snapshot.LastUpdatedAt.Value.LocalDateTime)
+            : L("Dashboard.LastSampleEmpty");
+
+        UpdateMatchResource(
+            MatchManpowerValueText,
+            MatchManpowerRateText,
+            snapshot,
+            ResourceKind.Manpower);
+        UpdateMatchResource(MatchFuelValueText, MatchFuelRateText, snapshot, ResourceKind.Fuel);
+        UpdateMatchResource(MatchArmyValueText, MatchArmyRateText, snapshot, ResourceKind.Army);
+        UpdateMatchResource(
+            MatchCommandPointsValueText,
+            MatchCommandPointsRateText,
+            snapshot,
+            ResourceKind.CommandPoints);
+        UpdateMatchDashboardConnectionState(snapshot);
+        UpdateMatchDashboardFeatures();
+    }
+
+    private void UpdateMatchDashboardConnectionState(MatchDashboardSnapshot snapshot)
+    {
+        MatchVersionText.Text = _backend.GameVersion == "—"
+            ? L("Dashboard.VersionEmpty")
+            : L("Dashboard.Version", _backend.GameVersion);
+
+        if (!_backend.State.IsConnected())
+        {
+            MatchStateText.Text = L("Dashboard.StateDisconnected");
+            MatchConnectionText.Text = L("Dashboard.WaitingConnection");
+            return;
+        }
+
+        if (snapshot.HasLiveData)
+        {
+            MatchStateText.Text = L("Dashboard.StateInMatch");
+            MatchConnectionText.Text = L("Dashboard.TelemetryActive");
+            return;
+        }
+
+        MatchStateText.Text = snapshot.HasSession
+            ? L("Dashboard.StateSyncing")
+            : L("Dashboard.StateWaitingMatch");
+        MatchConnectionText.Text = snapshot.HasSession
+            ? L("Dashboard.TelemetryInterrupted")
+            : L("Dashboard.EnterMatch");
+    }
+
+    private void UpdateMatchDashboardFeatures()
+    {
+        MatchIncomeMultiplierText.Text = _backend.IncomeMultiplier <= 1
+            ? L("Dashboard.IncomeDefault")
+            : L("Dashboard.IncomeActive", _backend.IncomeMultiplier);
+        MatchPopulationLimitText.Text = _backend.PopulationLimitState switch
+        {
+            PopulationLimitState.Active => L("Dashboard.PopActive", _backend.PopulationLimit),
+            PopulationLimitState.Disabled => L("Dashboard.PopDefault"),
+            PopulationLimitState.Unsupported => L("Dashboard.PopUnsupported"),
+            _ => _backend.PopulationLimitEnabled
+                ? L("Dashboard.PopWaiting", _backend.PopulationLimit)
+                : L("Dashboard.PopDefault")
+        };
+    }
+
+    private void UpdateMatchResource(
+        TextBlock valueText,
+        TextBlock rateText,
+        MatchDashboardSnapshot snapshot,
+        ResourceKind resource)
+    {
+        snapshot.Values.TryGetValue(resource, out var value);
+        snapshot.NetPerMinute.TryGetValue(resource, out var rate);
+        valueText.Text = FormatValue(value);
+        rateText.Text = L("Dashboard.NetChange", FormatRate(rate));
+    }
+
+    private static string FormatRate(double? rate) => rate.HasValue
+        ? rate.Value.ToString("+0.##;-0.##;0")
+        : "—";
+
+    private void UpdateLastUpdateText(MatchDashboardSnapshot snapshot)
+    {
+        LastUpdateText.Text = snapshot.HasLiveData && snapshot.LastUpdatedAt.HasValue
+            ? L("Status.Updated", snapshot.LastUpdatedAt.Value.LocalDateTime)
+            : L("Status.WaitingData");
+    }
+
+    private void ApplyLocalizedState()
+    {
+        UpdateIncomeMultiplierStatus();
+        UpdatePopulationLimitStatus();
+        UpdateStatus();
+        UpdatePlayerSquadActionsState();
+        UpdateMatchDashboard(_matchDashboard.Current);
+        UpdateLastUpdateText(_matchDashboard.Current);
+    }
+
+    private void UpdateLanguageMenuChecks()
+    {
+        foreach (var item in LanguageMenuItem.Items.OfType<MenuItem>())
+        {
+            item.IsChecked = string.Equals(
+                item.Tag?.ToString(),
+                _localizer.CultureName,
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private string L(string key, params object[] arguments) => _localizer.Get(key, arguments);
 
     private static void UpdateResourceValue(TextBlock valueText, Button addButton, double? value)
     {

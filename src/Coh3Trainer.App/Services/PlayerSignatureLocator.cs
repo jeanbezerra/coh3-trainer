@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Coh3Trainer.Interop;
+using Coh3Trainer.Localization;
 using Microsoft.Win32.SafeHandles;
 
 namespace Coh3Trainer.Services;
@@ -16,9 +17,13 @@ internal sealed class PlayerSignatureLocator : IDisposable
     private const int PlayerHookOffset = 9;
     private const int PlayerHookLength = 15;
     private const int QueueHookLength = 16;
-    private const int AllocationSize = 0x1000;
+    private const int AllocationSize = 0x2000;
     private const int PlayerCodeOffset = 0x10;
     private const int QueueCodeOffset = 0x100;
+    private const int ActionCodeOffset = 0x200;
+    private const int ActionRequestOffset = 0x1000;
+    private const int ActionResultOffset = 0x1004;
+    private const int MaximumPlayerSquads = 256;
 
     private static readonly byte?[] PlayerProbePattern = ParsePattern(
         "48 83 EC 68 48 85 C9 74 0F ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? " +
@@ -43,31 +48,50 @@ internal sealed class PlayerSignatureLocator : IDisposable
     private readonly Process _process;
     private readonly SafeProcessHandle _processHandle;
     private readonly ProcessModule _module;
+    private readonly ITextLocalizer _localizer;
+    private PlayerSquadActionLayout? _squadActionLayout;
     private nint _storageAddress;
     private nint _playerHookAddress;
     private nint _playerCodeAddress;
     private nint _queueHookAddress;
     private nint _queueCodeAddress;
+    private nint _actionCodeAddress;
     private bool _installed;
 
-    public PlayerSignatureLocator(Process process, SafeProcessHandle processHandle, ProcessModule module)
+    public PlayerSignatureLocator(
+        Process process,
+        SafeProcessHandle processHandle,
+        ProcessModule module,
+        PlayerSquadActionLayout? squadActionLayout,
+        ITextLocalizer? localizer = null)
     {
         _process = process;
         _processHandle = processHandle;
         _module = module;
+        _squadActionLayout = squadActionLayout;
+        _localizer = localizer ?? LocalizationService.Current;
     }
+
+    public bool SupportsPlayerSquadActions => _installed && _squadActionLayout is not null;
 
     public TrainerResult Install()
     {
         if (_installed)
         {
-            return TrainerResult.Ok("Resolvedor automático já está ativo.");
+            return TrainerResult.Ok(_localizer.Get("Signature.AlreadyActive"));
         }
 
         var recoveredExistingHook = false;
         try
         {
-            _playerHookAddress = FindUnique(PlayerProbePattern, "do jogador") + PlayerHookOffset;
+            if (_squadActionLayout is not null && !ValidateSquadActionLayout(_squadActionLayout))
+            {
+                _squadActionLayout = null;
+            }
+
+            _playerHookAddress = FindUnique(
+                PlayerProbePattern,
+                _localizer.Get("Signature.PlayerDescription")) + PlayerHookOffset;
             var playerBytes = ReadExact(_playerHookAddress, PlayerHookLength);
             if (TryAdoptPlayerHook(playerBytes))
             {
@@ -77,8 +101,7 @@ internal sealed class PlayerSignatureLocator : IDisposable
             {
                 if (!playerBytes.SequenceEqual(ExpectedPlayerBytes))
                 {
-                    throw new InvalidOperationException(
-                        "As instruções do jogador contêm uma alteração desconhecida.");
+                    throw new InvalidOperationException(_localizer.Get("Signature.PlayerInstructionsChanged"));
                 }
 
                 _storageAddress = NativeMethods.VirtualAllocEx(
@@ -89,17 +112,29 @@ internal sealed class PlayerSignatureLocator : IDisposable
                     NativeMethods.PageExecuteReadWrite);
                 if (_storageAddress == nint.Zero)
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Falha ao reservar a área de captura.");
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        _localizer.Get("Signature.CaptureAllocationFailed"));
                 }
 
                 _playerCodeAddress = _storageAddress + PlayerCodeOffset;
-                WriteExact(_playerCodeAddress, BuildPlayerCaptureStub(_storageAddress));
+                InstallSquadActionDispatcher();
+                WriteExact(
+                    _playerCodeAddress,
+                    BuildPlayerCaptureStub(_storageAddress, _actionCodeAddress));
                 PatchInstructions(
                     _playerHookAddress,
                     BuildAbsoluteJump(_playerCodeAddress, PlayerHookLength));
             }
 
-            _queueHookAddress = FindUnique(QueueProbePattern, "da fila de produção");
+            if (recoveredExistingHook)
+            {
+                InstallOrAdoptSquadActionDispatcher();
+            }
+
+            _queueHookAddress = FindUnique(
+                QueueProbePattern,
+                _localizer.Get("Signature.QueueDescription"));
             _queueCodeAddress = _storageAddress + QueueCodeOffset;
             var queueBytes = ReadExact(_queueHookAddress, QueueHookLength);
             if (TryAdoptQueueHook(queueBytes))
@@ -110,8 +145,7 @@ internal sealed class PlayerSignatureLocator : IDisposable
             {
                 if (!queueBytes.SequenceEqual(ExpectedQueueBytes))
                 {
-                    throw new InvalidOperationException(
-                        "As instruções da fila contêm uma alteração desconhecida.");
+                    throw new InvalidOperationException(_localizer.Get("Signature.QueueInstructionsChanged"));
                 }
 
                 WriteExact(
@@ -124,13 +158,13 @@ internal sealed class PlayerSignatureLocator : IDisposable
 
             _installed = true;
             return TrainerResult.Ok(recoveredExistingHook
-                ? "Identificação automática recuperada de uma conexão anterior."
-                : "Identificação automática instalada; aguardando o jogador local.");
+                ? _localizer.Get("Signature.Recovered")
+                : _localizer.Get("Signature.Installed"));
         }
         catch (Exception ex)
         {
             TryRestoreHooks();
-            return TrainerResult.Fail($"Falha ao ativar a identificação automática: {ex.Message}");
+            return TrainerResult.Fail(_localizer.Get("Signature.ActivationFailed", ex.Message));
         }
     }
 
@@ -154,14 +188,55 @@ internal sealed class PlayerSignatureLocator : IDisposable
         }
     }
 
+    public async Task<(bool Completed, int AffectedCount)> ExecutePlayerSquadActionAsync(
+        PlayerSquadAction action,
+        CancellationToken cancellationToken = default)
+    {
+        if (!SupportsPlayerSquadActions || _storageAddress == nint.Zero)
+        {
+            return (false, 0);
+        }
+
+        var requestAddress = _storageAddress + ActionRequestOffset;
+        var resultAddress = _storageAddress + ActionResultOffset;
+        if (BitConverter.ToInt32(ReadExact(requestAddress, sizeof(int))) != 0)
+        {
+            return (false, 0);
+        }
+
+        WriteExact(resultAddress, BitConverter.GetBytes(-1));
+        WriteExact(requestAddress, BitConverter.GetBytes((int)action));
+
+        for (var attempt = 0; attempt < 120; attempt++)
+        {
+            await Task.Delay(25, cancellationToken);
+            var request = BitConverter.ToInt32(ReadExact(requestAddress, sizeof(int)));
+            if (request != 0)
+            {
+                continue;
+            }
+
+            var affected = BitConverter.ToInt32(ReadExact(resultAddress, sizeof(int)));
+            return (affected >= 0, Math.Max(affected, 0));
+        }
+
+        var pendingRequest = BitConverter.ToInt32(ReadExact(requestAddress, sizeof(int)));
+        if (pendingRequest == (int)action)
+        {
+            WriteExact(requestAddress, BitConverter.GetBytes(0));
+        }
+
+        return (false, 0);
+    }
+
     private nint FindUnique(byte?[] pattern, string description)
     {
         var matches = FindPatternMatches(pattern, 2);
         return matches.Count switch
         {
-            0 => throw new InvalidOperationException($"A assinatura automática {description} não foi encontrada nesta versão."),
+            0 => throw new InvalidOperationException(_localizer.Get("Signature.NotFound", description)),
             1 => matches[0],
-            _ => throw new InvalidOperationException($"A assinatura automática {description} não é única.")
+            _ => throw new InvalidOperationException(_localizer.Get("Signature.NotUnique", description))
         };
     }
 
@@ -180,7 +255,10 @@ internal sealed class PlayerSignatureLocator : IDisposable
 
         try
         {
-            var expectedStub = BuildPlayerCaptureStub(storageAddress);
+            var actionCodeAddress = _squadActionLayout is null
+                ? nint.Zero
+                : storageAddress + ActionCodeOffset;
+            var expectedStub = BuildPlayerCaptureStub(storageAddress, actionCodeAddress);
             if (!ReadExact(codeAddress, expectedStub.Length).SequenceEqual(expectedStub))
             {
                 return false;
@@ -188,12 +266,84 @@ internal sealed class PlayerSignatureLocator : IDisposable
 
             _storageAddress = storageAddress;
             _playerCodeAddress = codeAddress;
+            _actionCodeAddress = actionCodeAddress;
             return true;
         }
         catch (Win32Exception)
         {
             return false;
         }
+    }
+
+    private bool ValidateSquadActionLayout(PlayerSquadActionLayout layout)
+    {
+        var moduleBase = _module.BaseAddress;
+        return MatchesPrefix(moduleBase + (nint)layout.GetPlayerSquadsRva,
+                   "48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 41 54 41 55 41 56 41 57") &&
+               MatchesPrefix(moduleBase + (nint)layout.IncreaseVeterancyRankRva,
+                   "48 83 EC 28 44 8B D2 4C 8B C9 48 85 C9") &&
+               MatchesPrefix(moduleBase + (nint)layout.SetHealthRva,
+                   "48 89 5C 24 18 48 89 6C 24 20 56 57 41 54 41 56 41 57") &&
+               MatchesPrefix(moduleBase + (nint)layout.AdjustAbilityCooldownRva,
+                   "48 85 C9 74 47 53 48 83 EC 20 8B DA");
+    }
+
+    private bool MatchesPrefix(nint address, string expectedHex)
+    {
+        var expected = expectedHex
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => Convert.ToByte(value, 16))
+            .ToArray();
+        try
+        {
+            return ReadExact(address, expected.Length).SequenceEqual(expected);
+        }
+        catch (Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    private void InstallSquadActionDispatcher()
+    {
+        if (_squadActionLayout is null)
+        {
+            _actionCodeAddress = nint.Zero;
+            return;
+        }
+
+        _actionCodeAddress = _storageAddress + ActionCodeOffset;
+        WriteExact(
+            _actionCodeAddress,
+            BuildSquadActionDispatcher(_storageAddress, _module.BaseAddress, _squadActionLayout));
+        InitializeSquadActionStorage();
+    }
+
+    private void InstallOrAdoptSquadActionDispatcher()
+    {
+        if (_squadActionLayout is null)
+        {
+            _actionCodeAddress = nint.Zero;
+            return;
+        }
+
+        _actionCodeAddress = _storageAddress + ActionCodeOffset;
+        var expected = BuildSquadActionDispatcher(
+            _storageAddress,
+            _module.BaseAddress,
+            _squadActionLayout);
+        if (!ReadExact(_actionCodeAddress, expected.Length).SequenceEqual(expected))
+        {
+            throw new InvalidOperationException(_localizer.Get("Signature.UnitActionInstructionsChanged"));
+        }
+
+        InitializeSquadActionStorage();
+    }
+
+    private void InitializeSquadActionStorage()
+    {
+        WriteExact(_storageAddress + ActionResultOffset, BitConverter.GetBytes(0));
+        WriteExact(_storageAddress + ActionRequestOffset, BitConverter.GetBytes(0));
     }
 
     private bool TryAdoptQueueHook(byte[] currentBytes)
@@ -299,7 +449,9 @@ internal sealed class PlayerSignatureLocator : IDisposable
                     NativeMethods.PageExecuteReadWrite,
                     out var previousProtection))
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Falha ao liberar a página de código.");
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    _localizer.Get("Signature.CodePageFailed"));
             }
 
             try
@@ -307,7 +459,9 @@ internal sealed class PlayerSignatureLocator : IDisposable
                 WriteExact(address, bytes);
                 if (!NativeMethods.FlushInstructionCache(_processHandle, address, (nuint)bytes.Length))
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Falha ao atualizar o cache de instruções.");
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        _localizer.Get("Signature.InstructionCacheFailed"));
                 }
             }
             finally
@@ -352,7 +506,7 @@ internal sealed class PlayerSignatureLocator : IDisposable
 
             if (suspended.Count == 0)
             {
-                throw new InvalidOperationException("Nenhuma thread do jogo pôde ser suspensa com segurança.");
+                throw new InvalidOperationException(_localizer.Get("Signature.NoThreads"));
             }
 
             return suspended;
@@ -379,7 +533,9 @@ internal sealed class PlayerSignatureLocator : IDisposable
         if (!NativeMethods.ReadProcessMemory(_processHandle, address, buffer, (nuint)count, out var bytesRead) ||
             bytesRead != (nuint)count)
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Falha ao ler 0x{address:X}.");
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                _localizer.Get("Signature.ReadFailed", address));
         }
 
         return buffer;
@@ -390,28 +546,133 @@ internal sealed class PlayerSignatureLocator : IDisposable
         if (!NativeMethods.WriteProcessMemory(_processHandle, address, bytes, (nuint)bytes.Length, out var bytesWritten) ||
             bytesWritten != (nuint)bytes.Length)
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Falha ao escrever 0x{address:X}.");
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                _localizer.Get("Signature.WriteFailed", address));
         }
     }
 
-    private static byte[] BuildPlayerCaptureStub(nint storageAddress)
+    private static byte[] BuildPlayerCaptureStub(nint storageAddress, nint actionCodeAddress)
     {
         var bytes = new List<byte>
         {
             0x80, 0xB9, 0x82, 0x06, 0x00, 0x00, 0x00, // cmp byte ptr [rcx+682], 0
-            0x75, 0x0D,                               // jne skip_capture
+            0x75, actionCodeAddress == nint.Zero ? (byte)0x0D : (byte)0x23,
             0x48, 0xB8                                // mov rax, storageAddress
         };
         bytes.AddRange(BitConverter.GetBytes(storageAddress.ToInt64()));
+        bytes.AddRange(new byte[] { 0x48, 0x89, 0x08 }); // mov [rax], rcx
+        if (actionCodeAddress != nint.Zero)
+        {
+            bytes.AddRange(new byte[]
+            {
+                0x51,                                     // push rcx
+                0x48, 0x83, 0xEC, 0x28,                   // sub rsp, 28h
+                0x48, 0xB8                                // mov rax, actionCodeAddress
+            });
+            bytes.AddRange(BitConverter.GetBytes(actionCodeAddress.ToInt64()));
+            bytes.AddRange(new byte[]
+            {
+                0xFF, 0xD0,                               // call rax
+                0x48, 0x83, 0xC4, 0x28,                   // add rsp, 28h
+                0x59                                      // pop rcx
+            });
+        }
+
         bytes.AddRange(new byte[]
         {
-            0x48, 0x89, 0x08,                         // mov [rax], rcx
             0x80, 0xB9, 0x82, 0x06, 0x00, 0x00, 0x00, // original cmp
             0x0F, 0x95, 0xC0,                         // setne al
             0x48, 0x83, 0xC4, 0x68,                   // add rsp, 68
             0xC3                                      // ret
         });
         return bytes.ToArray();
+    }
+
+    private static byte[] BuildSquadActionDispatcher(
+        nint storageAddress,
+        nint moduleBase,
+        PlayerSquadActionLayout layout)
+    {
+        var code = new X64CodeBuilder();
+
+        code.Emit(0x53, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57);
+        code.Emit(0x48, 0x83, 0xEC, 0x28);
+        code.Emit(0x48, 0x89, 0xCD);                    // mov rbp,rcx (local player)
+        code.MovRbxImmediate(storageAddress);
+        code.Emit(0x8B, 0x83).Int32(ActionRequestOffset); // mov eax,[rbx+request]
+        code.Emit(0x85, 0xC0);                           // test eax,eax
+        code.Jump32(0x0F, 0x8E, "finish");              // jle finish
+        code.Emit(0x83, 0xF8, 0x03);                    // cmp eax,3
+        code.Jump32(0x0F, 0x87, "invalid");             // ja invalid
+        code.Emit(0x41, 0x89, 0xC4);                    // mov r12d,eax
+        code.Emit(0xBA).Int32(-1);                       // mov edx,-1
+        code.Emit(0xF0, 0x0F, 0xB1, 0x93).Int32(ActionRequestOffset); // lock cmpxchg [request],edx
+        code.Jump32(0x0F, 0x85, "finish");              // another game thread claimed it
+        code.Emit(0xC7, 0x83).Int32(ActionResultOffset).Int32(0);
+
+        code.Emit(0x48, 0x89, 0xE9);                    // mov rcx,rbp
+        code.MovRaxImmediate(moduleBase + (nint)layout.GetPlayerSquadsRva);
+        code.Emit(0xFF, 0xD0);
+        code.Emit(0x48, 0x85, 0xC0);                    // test rax,rax
+        code.Jump32(0x0F, 0x84, "invalid");             // je invalid
+        code.Emit(0x4C, 0x8B, 0x70, 0x08);              // mov r14,[rax+8]
+        code.Emit(0x4C, 0x8B, 0x78, 0x10);              // mov r15,[rax+10h]
+        code.Emit(0x4D, 0x39, 0xFE);                    // cmp r14,r15
+        code.Jump32(0x0F, 0x87, "invalid");             // ja invalid
+        code.Emit(0x4C, 0x89, 0xF8);                    // mov rax,r15
+        code.Emit(0x4C, 0x29, 0xF0);                    // sub rax,r14
+        code.Emit(0xA8, 0x07);                          // test al,7
+        code.Jump32(0x0F, 0x85, "invalid");             // jne invalid
+        code.Emit(0x48, 0x3D).Int32(MaximumPlayerSquads * sizeof(long));
+        code.Jump32(0x0F, 0x87, "invalid");             // ja invalid
+        code.Emit(0x45, 0x31, 0xED);                    // xor r13d,r13d
+
+        code.Label("loop");
+        code.Emit(0x4D, 0x39, 0xFE);
+        code.Jump32(0x0F, 0x83, "complete");            // jae complete
+        code.Emit(0x49, 0x8B, 0x0E);                    // mov rcx,[r14]
+        code.Emit(0x49, 0x83, 0xC6, 0x08);              // add r14,8
+        code.Emit(0x48, 0x85, 0xC9);
+        code.Jump32(0x0F, 0x84, "loop");                // je loop
+        code.Emit(0x41, 0x83, 0xFC, 0x01);
+        code.Jump32(0x0F, 0x85, "check_heal");
+        code.Emit(0xBA).Int32(1);                        // mov edx,1
+        code.MovRaxImmediate(moduleBase + (nint)layout.IncreaseVeterancyRankRva);
+        code.Emit(0xFF, 0xD0);
+        code.Jump32(0xE9, "count");
+
+        code.Label("check_heal");
+        code.Emit(0x41, 0x83, 0xFC, 0x02);
+        code.Jump32(0x0F, 0x85, "cooldown");
+        code.Emit(0xB8).Int32(0x3F800000);               // mov eax,1.0f
+        code.Emit(0x66, 0x0F, 0x6E, 0xC8);              // movd xmm1,eax
+        code.MovRaxImmediate(moduleBase + (nint)layout.SetHealthRva);
+        code.Emit(0xFF, 0xD0);
+        code.Jump32(0xE9, "count");
+
+        code.Label("cooldown");
+        code.Emit(0xBA).Int32(-86_400_000);              // force every positive remaining duration to zero
+        code.MovRaxImmediate(moduleBase + (nint)layout.AdjustAbilityCooldownRva);
+        code.Emit(0xFF, 0xD0);
+
+        code.Label("count");
+        code.Emit(0x41, 0xFF, 0xC5);                    // inc r13d
+        code.Jump32(0xE9, "loop");
+
+        code.Label("complete");
+        code.Emit(0x44, 0x89, 0xAB).Int32(ActionResultOffset);
+        code.Emit(0xC7, 0x83).Int32(ActionRequestOffset).Int32(0);
+        code.Jump32(0xE9, "finish");
+
+        code.Label("invalid");
+        code.Emit(0xC7, 0x83).Int32(ActionResultOffset).Int32(-2);
+        code.Emit(0xC7, 0x83).Int32(ActionRequestOffset).Int32(0);
+
+        code.Label("finish");
+        code.Emit(0x48, 0x83, 0xC4, 0x28);
+        code.Emit(0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5F, 0x5E, 0x5D, 0x5B, 0xC3);
+        return code.Build();
     }
 
     private static byte[] BuildQueueCaptureStub(nint storageAddress, nint queueHookAddress)
@@ -546,16 +807,94 @@ internal sealed class PlayerSignatureLocator : IDisposable
     {
         if ((_installed || _storageAddress != nint.Zero) && !TryRestoreHooks())
         {
-            // Se o jogo já encerrou, o sistema operacional recuperará a alocação.
+            // If the game has already exited, the operating system will reclaim the allocation.
             return;
         }
 
-        // O stub pode ainda estar em execução em outra thread. Mantê-lo alocado até
-        // o encerramento do jogo elimina a corrida entre restaurar o hook e liberá-lo.
+        // The stub may still be executing on another thread. Keeping it allocated until
+        // the game exits avoids a race between restoring the hook and releasing its code.
         _storageAddress = nint.Zero;
         _playerHookAddress = nint.Zero;
         _playerCodeAddress = nint.Zero;
         _queueHookAddress = nint.Zero;
         _queueCodeAddress = nint.Zero;
+        _actionCodeAddress = nint.Zero;
+    }
+
+    private sealed class X64CodeBuilder
+    {
+        private readonly List<byte> _bytes = new();
+        private readonly Dictionary<string, int> _labels = new(StringComparer.Ordinal);
+        private readonly List<(int DisplacementOffset, string Label)> _fixups = new();
+
+        public X64CodeBuilder Emit(params byte[] bytes)
+        {
+            _bytes.AddRange(bytes);
+            return this;
+        }
+
+        public X64CodeBuilder Int32(int value)
+        {
+            _bytes.AddRange(BitConverter.GetBytes(value));
+            return this;
+        }
+
+        public void MovRaxImmediate(nint value)
+        {
+            Emit(0x48, 0xB8);
+            _bytes.AddRange(BitConverter.GetBytes(value.ToInt64()));
+        }
+
+        public void MovRbxImmediate(nint value)
+        {
+            Emit(0x48, 0xBB);
+            _bytes.AddRange(BitConverter.GetBytes(value.ToInt64()));
+        }
+
+        public void MovRdxImmediate(nint value)
+        {
+            Emit(0x48, 0xBA);
+            _bytes.AddRange(BitConverter.GetBytes(value.ToInt64()));
+        }
+
+        public void Label(string name) => _labels.Add(name, _bytes.Count);
+
+        public void Jump32(byte opcode, string label)
+        {
+            Emit(opcode);
+            AddFixup(label);
+        }
+
+        public void Jump32(byte opcode1, byte opcode2, string label)
+        {
+            Emit(opcode1, opcode2);
+            AddFixup(label);
+        }
+
+        public byte[] Build()
+        {
+            foreach (var (offset, label) in _fixups)
+            {
+                if (!_labels.TryGetValue(label, out var target))
+                {
+                    throw new InvalidOperationException($"Unknown machine-code label: {label}");
+                }
+
+                var displacement = BitConverter.GetBytes(target - (offset + sizeof(int)));
+                for (var index = 0; index < displacement.Length; index++)
+                {
+                    _bytes[offset + index] = displacement[index];
+                }
+            }
+
+            return _bytes.ToArray();
+        }
+
+        private void AddFixup(string label)
+        {
+            var offset = _bytes.Count;
+            _bytes.AddRange(new byte[sizeof(int)]);
+            _fixups.Add((offset, label));
+        }
     }
 }

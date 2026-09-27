@@ -1,4 +1,5 @@
 using System.Globalization;
+using Coh3Trainer.Localization;
 using Coh3Trainer.Models;
 
 namespace Coh3Trainer.Services;
@@ -17,6 +18,11 @@ public interface ITrainerSettingsValidator
 
 public sealed class TrainerSettingsValidator : ITrainerSettingsValidator
 {
+    private readonly ITextLocalizer _localizer;
+
+    public TrainerSettingsValidator(ITextLocalizer? localizer = null) =>
+        _localizer = localizer ?? LocalizationService.Current;
+
     public bool TryApply(
         TrainerSettings settings,
         IReadOnlyDictionary<ResourceKind, ResourceSettingsInput> inputs,
@@ -26,6 +32,13 @@ public sealed class TrainerSettingsValidator : ITrainerSettingsValidator
         var parsed = new Dictionary<ResourceKind, (int Amount, string Hotkey)>();
         var selectedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        if (inputs.Count != TrainerSettings.EnabledResources.Count ||
+            TrainerSettings.EnabledResources.Any(kind => !inputs.ContainsKey(kind)))
+        {
+            message = _localizer.Get("Validation.IncompleteSettings");
+            return false;
+        }
+
         if (!int.TryParse(
                 populationLimit.Limit,
                 NumberStyles.Integer,
@@ -33,7 +46,10 @@ public sealed class TrainerSettingsValidator : ITrainerSettingsValidator
                 out var parsedPopulationLimit) ||
             !PopulationLimitRules.IsValidLimit(parsedPopulationLimit))
         {
-            message = $"O limite de população deve estar entre {PopulationLimitRules.MinimumLimit} e {PopulationLimitRules.MaximumLimit}.";
+            message = _localizer.Get(
+                "Validation.PopulationRange",
+                PopulationLimitRules.MinimumLimit,
+                PopulationLimitRules.MaximumLimit);
             return false;
         }
 
@@ -41,25 +57,28 @@ public sealed class TrainerSettingsValidator : ITrainerSettingsValidator
         {
             if (!int.TryParse(input.Amount, NumberStyles.Integer, CultureInfo.InvariantCulture, out var amount))
             {
-                message = $"Informe uma quantidade válida para {kind.DisplayName()}.";
+                message = _localizer.Get("Validation.ValidAmount", ResourceName(kind));
                 return false;
             }
 
             if (kind == ResourceKind.CommandPoints && !CommandPointRules.IsValidIncrement(amount))
             {
-                message = $"A quantidade de Command Points deve estar entre {CommandPointRules.MinimumIncrement} e {CommandPointRules.MaximumPoints}.";
+                message = _localizer.Get(
+                    "Validation.CommandPointsRange",
+                    CommandPointRules.MinimumIncrement,
+                    CommandPointRules.MaximumPoints);
                 return false;
             }
 
             if (kind != ResourceKind.CommandPoints && amount is < 1 or > 1_000_000)
             {
-                message = $"A quantidade de {kind.DisplayName()} deve estar entre 1 e 1.000.000.";
+                message = _localizer.Get("Validation.ResourceRange", ResourceName(kind));
                 return false;
             }
 
             if (!TrainerSettings.IsFunctionKey(input.Hotkey) || !selectedKeys.Add(input.Hotkey!))
             {
-                message = $"Selecione {inputs.Count} teclas F diferentes.";
+                message = _localizer.Get("Validation.DistinctKeys", inputs.Count);
                 return false;
             }
 
@@ -78,4 +97,6 @@ public sealed class TrainerSettingsValidator : ITrainerSettingsValidator
         message = string.Empty;
         return true;
     }
+
+    private string ResourceName(ResourceKind kind) => _localizer.Get($"Resource.{kind}");
 }

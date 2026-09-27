@@ -1,30 +1,48 @@
 <Window x:Class="Coh3Trainer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CoH3 Resource Trainer"
-        Width="820" Height="720" MinWidth="740" MinHeight="650"
+        xmlns:localization="clr-namespace:Coh3Trainer.Localization"
+        Title="{Binding [App.Title], Source={x:Static localization:LocalizationService.Current}}"
+        Icon="Assets/trainer.ico"
+        Width="1060" Height="820" MinWidth="900" MinHeight="720"
         Background="{StaticResource WindowBackground}"
         Foreground="{StaticResource TextPrimary}"
         FontFamily="Segoe UI"
         WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded" Closed="Window_Closed">
     <DockPanel Background="{StaticResource WindowBackground}">
-        <Menu DockPanel.Dock="Top" AutomationProperties.Name="Menu principal">
-            <MenuItem Header="_CONFIGURAÇÕES">
-                <MenuItem Header="Idioma atual">
+        <Menu DockPanel.Dock="Top"
+              AutomationProperties.Name="{Binding [Menu.Main], Source={x:Static localization:LocalizationService.Current}}">
+            <MenuItem Header="{Binding [Menu.Settings], Source={x:Static localization:LocalizationService.Current}}">
+                <MenuItem x:Name="LanguageMenuItem"
+                          Header="{Binding [Menu.Language], Source={x:Static localization:LocalizationService.Current}}">
                     <MenuItem x:Name="PortugueseLanguageMenuItem"
-                              Header="Português (Brasil)" IsCheckable="True" IsChecked="True"
-                              StaysOpenOnClick="True" Click="CurrentLanguageMenuItem_Click" />
+                              Header="Português (Brasil)" Tag="pt-BR" IsCheckable="True" IsChecked="True"
+                              Click="LanguageMenuItem_Click" />
+                    <MenuItem x:Name="EnglishLanguageMenuItem"
+                              Header="English" Tag="en-US" IsCheckable="True"
+                              Click="LanguageMenuItem_Click" />
+                    <MenuItem x:Name="ChineseLanguageMenuItem"
+                              Header="中文（简体）" Tag="zh-CN" IsCheckable="True"
+                              Click="LanguageMenuItem_Click" />
+                    <MenuItem x:Name="SpanishLanguageMenuItem"
+                              Header="Español" Tag="es-ES" IsCheckable="True"
+                              Click="LanguageMenuItem_Click" />
                 </MenuItem>
                 <Separator />
-                <MenuItem Header="Abrir pasta de configurações" Click="OpenSettingsFolderMenuItem_Click" />
-                <MenuItem Header="Abrir pasta de logs" Click="OpenLogsFolderMenuItem_Click" />
+                <MenuItem Header="{Binding [Menu.OpenSettingsFolder], Source={x:Static localization:LocalizationService.Current}}"
+                          Click="OpenSettingsFolderMenuItem_Click" />
+                <MenuItem Header="{Binding [Menu.OpenLogsFolder], Source={x:Static localization:LocalizationService.Current}}"
+                          Click="OpenLogsFolderMenuItem_Click" />
             </MenuItem>
-            <MenuItem Header="_AJUDA">
-                <MenuItem Header="Como usar" Click="HelpMenuItem_Click" />
-                <MenuItem Header="Colaboradores" Click="ContributorsMenuItem_Click" />
+            <MenuItem Header="{Binding [Menu.Help], Source={x:Static localization:LocalizationService.Current}}">
+                <MenuItem Header="{Binding [Menu.HowTo], Source={x:Static localization:LocalizationService.Current}}"
+                          Click="HelpMenuItem_Click" />
+                <MenuItem Header="{Binding [Menu.Contributors], Source={x:Static localization:LocalizationService.Current}}"
+                          Click="ContributorsMenuItem_Click" />
                 <Separator />
-                <MenuItem Header="Sobre" Click="AboutMenuItem_Click" />
+                <MenuItem Header="{Binding [Menu.About], Source={x:Static localization:LocalizationService.Current}}"
+                          Click="AboutMenuItem_Click" />
             </MenuItem>
         </Menu>
 
@@ -41,14 +59,22 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0">
-                <TextBlock FontSize="26" FontWeight="SemiBold" Text="CoH3 Resource Trainer" />
-                <TextBlock Foreground="{StaticResource SecondaryText}"
-                           Text="Campanha e partidas solo/privadas contra IA" />
-            </StackPanel>
+            <DockPanel Grid.Column="0" LastChildFill="True">
+                <Image Width="42" Height="42" Margin="0,0,12,0"
+                       VerticalAlignment="Center" Stretch="Uniform"
+                       Source="Assets/trainer-icon-master.png"
+                       AutomationProperties.Name="{Binding [App.Title], Source={x:Static localization:LocalizationService.Current}}" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock FontSize="26" FontWeight="SemiBold"
+                               Text="{Binding [App.Title], Source={x:Static localization:LocalizationService.Current}}" />
+                    <TextBlock Foreground="{StaticResource SecondaryText}"
+                               Text="{Binding [Header.Subtitle], Source={x:Static localization:LocalizationService.Current}}" />
+                </StackPanel>
+            </DockPanel>
             <Button x:Name="ConnectButton" Grid.Column="1" MinWidth="160" Height="38" VerticalAlignment="Center"
-                    Click="ConnectButton_Click" Content="CONECTAR"
-                    AutomationProperties.Name="Conectar ao Company of Heroes 3" />
+                    Click="ConnectButton_Click"
+                    Content="{Binding [Action.Connect], Source={x:Static localization:LocalizationService.Current}}"
+                    AutomationProperties.Name="{Binding [Tooltip.Connect], Source={x:Static localization:LocalizationService.Current}}" />
         </Grid>
 
         <Border Grid.Row="1" Background="{StaticResource PanelBackground}"
@@ -63,7 +89,8 @@
                 <Ellipse x:Name="StatusIndicator" Grid.Column="0" Width="10" Height="10"
                          Fill="#9CA3AF" Margin="0,0,10,0" />
                 <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center"
-                           Text="Inicializando..." TextTrimming="CharacterEllipsis" />
+                           Text="{Binding [Status.Initializing], Source={x:Static localization:LocalizationService.Current}}"
+                           TextTrimming="CharacterEllipsis" />
                 <TextBlock x:Name="VersionText" Grid.Column="2" Foreground="{StaticResource SecondaryText}"
                            Margin="20,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" />
             </Grid>
@@ -71,7 +98,7 @@
 
         <TabControl Grid.Row="2" Background="{StaticResource WindowBackground}" Foreground="{StaticResource TextPrimary}"
                     BorderBrush="{StaticResource PanelBorder}">
-            <TabItem Header="TRAINER">
+            <TabItem Header="{Binding [Tab.Trainer], Source={x:Static localization:LocalizationService.Current}}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="10">
                         <Grid Margin="0,2,0,12">
@@ -81,9 +108,9 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock FontSize="16" FontWeight="SemiBold"
-                                           Text="DADOS DO JOGADOR LOCAL • TEMPO REAL" />
+                                           Text="{Binding [Trainer.LiveDataTitle], Source={x:Static localization:LocalizationService.Current}}" />
                                 <TextBlock Foreground="{StaticResource SecondaryText}"
-                                           Text="Pressione a tecla configurada ou use o botão. Os valores são somados, não substituídos." />
+                                           Text="{Binding [Trainer.Instruction], Source={x:Static localization:LocalizationService.Current}}" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
                                 <TextBlock x:Name="IncomeMultiplierStatusText"
@@ -105,12 +132,15 @@
                                     <ColumnDefinition Width="120" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="MANPOWER" />
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Resource.Manpower], Source={x:Static localization:LocalizationService.Current}}" />
                                     <TextBlock x:Name="ManpowerValueText" FontSize="26" Foreground="{StaticResource TextPrimary}" Text="—" />
                                 </StackPanel>
                                 <TextBlock x:Name="ManpowerHotkeyText" Grid.Column="1" FontSize="18" VerticalAlignment="Center" TextAlignment="Center" Text="F6" />
                                 <Button x:Name="ManpowerAddButton" Grid.Column="2" Tag="Manpower"
-                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                                        Click="AddResourceButton_Click"
+                                        Content="{Binding [Action.Add], Source={x:Static localization:LocalizationService.Current}}"
+                                        IsEnabled="False" />
                             </Grid>
                         </Border>
 
@@ -122,12 +152,15 @@
                                     <ColumnDefinition Width="120" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="FUEL" />
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Resource.Fuel], Source={x:Static localization:LocalizationService.Current}}" />
                                     <TextBlock x:Name="FuelValueText" FontSize="26" Foreground="{StaticResource TextPrimary}" Text="—" />
                                 </StackPanel>
                                 <TextBlock x:Name="FuelHotkeyText" Grid.Column="1" FontSize="18" VerticalAlignment="Center" TextAlignment="Center" Text="F7" />
                                 <Button x:Name="FuelAddButton" Grid.Column="2" Tag="Fuel"
-                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                                        Click="AddResourceButton_Click"
+                                        Content="{Binding [Action.Add], Source={x:Static localization:LocalizationService.Current}}"
+                                        IsEnabled="False" />
                             </Grid>
                         </Border>
 
@@ -139,12 +172,15 @@
                                     <ColumnDefinition Width="120" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="MUNIÇÕES" />
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Resource.Army], Source={x:Static localization:LocalizationService.Current}}" />
                                     <TextBlock x:Name="ArmyValueText" FontSize="26" Foreground="{StaticResource TextPrimary}" Text="—" />
                                 </StackPanel>
                                 <TextBlock x:Name="ArmyHotkeyText" Grid.Column="1" FontSize="18" VerticalAlignment="Center" TextAlignment="Center" Text="F8" />
                                 <Button x:Name="ArmyAddButton" Grid.Column="2" Tag="Army"
-                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                                        Click="AddResourceButton_Click"
+                                        Content="{Binding [Action.Add], Source={x:Static localization:LocalizationService.Current}}"
+                                        IsEnabled="False" />
                             </Grid>
                         </Border>
 
@@ -156,26 +192,237 @@
                                     <ColumnDefinition Width="120" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="COMMAND POINTS" />
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Resource.CommandPoints], Source={x:Static localization:LocalizationService.Current}}" />
                                     <TextBlock x:Name="CommandPointsValueText" FontSize="26"
                                                Foreground="{StaticResource TextPrimary}" Text="—" />
                                 </StackPanel>
                                 <TextBlock x:Name="CommandPointsHotkeyText" Grid.Column="1" FontSize="18"
                                            VerticalAlignment="Center" TextAlignment="Center" Text="F9" />
                                 <Button x:Name="CommandPointsAddButton" Grid.Column="2" Tag="CommandPoints"
-                                        Click="AddResourceButton_Click" Content="ADICIONAR" IsEnabled="False" />
+                                        Click="AddResourceButton_Click"
+                                        Content="{Binding [Action.Add], Source={x:Static localization:LocalizationService.Current}}"
+                                        IsEnabled="False" />
                             </Grid>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="CONFIGURAÇÃO">
+            <TabItem Header="{Binding [Tab.Units], Source={x:Static localization:LocalizationService.Current}}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="14">
-                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Atalhos e quantidades" />
+                        <TextBlock FontSize="20" FontWeight="SemiBold"
+                                   Text="{Binding [Units.Title], Source={x:Static localization:LocalizationService.Current}}" />
+                        <TextBlock Margin="0,4,0,6" Foreground="{StaticResource SecondaryText}"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding [Units.Subtitle], Source={x:Static localization:LocalizationService.Current}}" />
+                        <TextBlock x:Name="SquadActionsAvailabilityText" Margin="0,0,0,14"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding [Units.ConnectHint], Source={x:Static localization:LocalizationService.Current}}" />
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                                Padding="18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="190" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Units.VeterancyTitle], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock Margin="0,4,20,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="{Binding [Units.VeterancyDescription], Source={x:Static localization:LocalizationService.Current}}" />
+                                </StackPanel>
+                                <Button x:Name="PromoteVeterancyButton" Grid.Column="1"
+                                        Tag="PromoteVeterancy" MinHeight="42" VerticalAlignment="Center"
+                                        Click="PlayerSquadActionButton_Click" IsEnabled="False"
+                                        Content="{Binding [Action.Promote], Source={x:Static localization:LocalizationService.Current}}" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                                Padding="18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="190" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Units.HealTitle], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock Margin="0,4,20,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="{Binding [Units.HealDescription], Source={x:Static localization:LocalizationService.Current}}" />
+                                </StackPanel>
+                                <Button x:Name="HealAllButton" Grid.Column="1"
+                                        Tag="Heal" MinHeight="42" VerticalAlignment="Center"
+                                        Click="PlayerSquadActionButton_Click" IsEnabled="False"
+                                        Content="{Binding [Action.Heal], Source={x:Static localization:LocalizationService.Current}}" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                                Padding="18">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="190" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                                               Text="{Binding [Units.CooldownsTitle], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock Margin="0,4,20,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="{Binding [Units.CooldownsDescription], Source={x:Static localization:LocalizationService.Current}}" />
+                                </StackPanel>
+                                <Button x:Name="ResetCooldownsButton" Grid.Column="1"
+                                        Tag="ResetCooldowns" MinHeight="42" VerticalAlignment="Center"
+                                        Click="PlayerSquadActionButton_Click" IsEnabled="False"
+                                        Content="{Binding [Action.ResetCooldowns], Source={x:Static localization:LocalizationService.Current}}" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="{Binding [Tab.Match], Source={x:Static localization:LocalizationService.Current}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <Grid Margin="0,2,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="20" FontWeight="SemiBold"
+                                           Text="{Binding [Dashboard.Title], Source={x:Static localization:LocalizationService.Current}}" />
+                                <TextBlock Margin="0,3,0,0" Foreground="{StaticResource SecondaryText}"
+                                           Text="{Binding [Dashboard.Subtitle], Source={x:Static localization:LocalizationService.Current}}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                <TextBlock x:Name="MatchStateText" HorizontalAlignment="Right"
+                                           FontWeight="SemiBold" Text="DESCONECTADO" />
+                                <TextBlock x:Name="MatchElapsedText" HorizontalAlignment="Right"
+                                           FontSize="22" FontWeight="SemiBold" Text="00:00:00" />
+                                <TextBlock HorizontalAlignment="Right" Foreground="{StaticResource SecondaryText}"
+                                           Text="{Binding [Dashboard.ObservedTime], Source={x:Static localization:LocalizationService.Current}}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Background="{StaticResource PanelBackground}"
+                                BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                                CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock x:Name="MatchConnectionText" FontWeight="SemiBold"
+                                               Text="Aguardando conexão com o jogo" />
+                                    <TextBlock x:Name="MatchLastSampleText" Margin="0,3,0,0"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Última amostra: —" />
+                                </StackPanel>
+                                <TextBlock x:Name="MatchVersionText" Grid.Column="1"
+                                           Margin="18,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource SecondaryText}" Text="VERSÃO —" />
+                            </Grid>
+                        </Border>
+
+                        <UniformGrid Columns="2" Margin="-4,0,-4,6">
+                            <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                    Padding="14" Margin="4">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding [Resource.Manpower], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock x:Name="MatchManpowerValueText" FontSize="26"
+                                               FontWeight="SemiBold" Text="—" />
+                                    <TextBlock x:Name="MatchManpowerRateText"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Variação líquida: —/min" />
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                    Padding="14" Margin="4">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding [Resource.Fuel], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock x:Name="MatchFuelValueText" FontSize="26"
+                                               FontWeight="SemiBold" Text="—" />
+                                    <TextBlock x:Name="MatchFuelRateText"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Variação líquida: —/min" />
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                    Padding="14" Margin="4">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding [Resource.Army], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock x:Name="MatchArmyValueText" FontSize="26"
+                                               FontWeight="SemiBold" Text="—" />
+                                    <TextBlock x:Name="MatchArmyRateText"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Variação líquida: —/min" />
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{StaticResource PanelBackground}" CornerRadius="6"
+                                    Padding="14" Margin="4">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding [Resource.CommandPoints], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock x:Name="MatchCommandPointsValueText" FontSize="26"
+                                               FontWeight="SemiBold" Text="—" />
+                                    <TextBlock x:Name="MatchCommandPointsRateText"
+                                               Foreground="{StaticResource SecondaryText}"
+                                               Text="Variação líquida: —/min" />
+                                </StackPanel>
+                            </Border>
+                        </UniformGrid>
+
+                        <Border Background="{StaticResource InputBackground}"
+                                BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                                CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Foreground="{StaticResource SecondaryText}"
+                                               Text="{Binding [Dashboard.Income], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock x:Name="MatchIncomeMultiplierText" Margin="0,3,0,0"
+                                               FontSize="16" FontWeight="SemiBold" Text="PADRÃO • 1x" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Foreground="{StaticResource SecondaryText}"
+                                               Text="{Binding [Dashboard.Population], Source={x:Static localization:LocalizationService.Current}}" />
+                                    <TextBlock x:Name="MatchPopulationLimitText" Margin="0,3,0,0"
+                                               FontSize="16" FontWeight="SemiBold" Text="AGUARDANDO" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Margin="2,0" TextWrapping="Wrap"
+                                   Foreground="{StaticResource SecondaryText}"
+                                   Text="{Binding [Dashboard.Footnote], Source={x:Static localization:LocalizationService.Current}}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="{Binding [Tab.Settings], Source={x:Static localization:LocalizationService.Current}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14">
+                        <TextBlock FontSize="20" FontWeight="SemiBold"
+                                   Text="{Binding [Settings.Title], Source={x:Static localization:LocalizationService.Current}}" />
                         <TextBlock Margin="0,4,0,14" Foreground="{StaticResource SecondaryText}"
-                                   Text="Cada atalho global aceita uma tecla entre F1 e F12." />
+                                   Text="{Binding [Settings.HotkeyHint], Source={x:Static localization:LocalizationService.Current}}" />
 
                         <Grid Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
@@ -183,7 +430,8 @@
                                 <ColumnDefinition Width="180" />
                                 <ColumnDefinition Width="120" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" Text="Manpower" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding [Resource.Manpower], Source={x:Static localization:LocalizationService.Current}}" />
                             <TextBox x:Name="ManpowerAmountTextBox" Grid.Column="1" />
                             <ComboBox x:Name="ManpowerHotkeyCombo" Grid.Column="2" />
                         </Grid>
@@ -193,7 +441,8 @@
                                 <ColumnDefinition Width="180" />
                                 <ColumnDefinition Width="120" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" Text="Fuel" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding [Resource.Fuel], Source={x:Static localization:LocalizationService.Current}}" />
                             <TextBox x:Name="FuelAmountTextBox" Grid.Column="1" />
                             <ComboBox x:Name="FuelHotkeyCombo" Grid.Column="2" />
                         </Grid>
@@ -203,7 +452,8 @@
                                 <ColumnDefinition Width="180" />
                                 <ColumnDefinition Width="120" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" Text="Munições" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding [Resource.Army], Source={x:Static localization:LocalizationService.Current}}" />
                             <TextBox x:Name="ArmyAmountTextBox" Grid.Column="1" />
                             <ComboBox x:Name="ArmyHotkeyCombo" Grid.Column="2" />
                         </Grid>
@@ -213,9 +463,10 @@
                                 <ColumnDefinition Width="180" />
                                 <ColumnDefinition Width="120" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" Text="Command Points" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding [Resource.CommandPoints], Source={x:Static localization:LocalizationService.Current}}" />
                             <TextBox x:Name="CommandPointsAmountTextBox" Grid.Column="1"
-                                     AutomationProperties.Name="Quantidade de Command Points" />
+                                     AutomationProperties.Name="{Binding [Automation.CommandPointsAmount], Source={x:Static localization:LocalizationService.Current}}" />
                             <ComboBox x:Name="CommandPointsHotkeyCombo" Grid.Column="2" />
                         </Grid>
                         <Border Margin="0,8,0,8" Padding="12"
@@ -228,10 +479,11 @@
                                     <ColumnDefinition Width="120" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock FontWeight="SemiBold" Text="Multiplicador de renda" />
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding [Settings.IncomeMultiplier], Source={x:Static localization:LocalizationService.Current}}" />
                                     <TextBlock Margin="0,3,12,0" TextWrapping="Wrap"
                                                Foreground="{StaticResource SecondaryText}"
-                                               Text="Multiplica os ganhos observados de Manpower, Fuel e Munições." />
+                                               Text="{Binding [Settings.IncomeDescription], Source={x:Static localization:LocalizationService.Current}}" />
                                 </StackPanel>
                                 <ComboBox x:Name="IncomeMultiplierCombo" Grid.Column="1"
                                           VerticalAlignment="Center" />
@@ -248,22 +500,25 @@
                                     <ColumnDefinition Width="120" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock FontWeight="SemiBold" Text="Limite de população" />
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding [Settings.PopulationLimit], Source={x:Static localization:LocalizationService.Current}}" />
                                     <TextBlock Margin="0,3,12,0" TextWrapping="Wrap"
                                                Foreground="{StaticResource SecondaryText}"
-                                               Text="Substitui o teto de população do jogador local durante a partida." />
+                                               Text="{Binding [Settings.PopulationDescription], Source={x:Static localization:LocalizationService.Current}}" />
                                 </StackPanel>
                                 <CheckBox x:Name="PopulationLimitEnabledCheckBox" Grid.Column="1"
-                                          VerticalAlignment="Center" Content="ATIVO"
+                                          VerticalAlignment="Center"
+                                          Content="{Binding [Settings.Active], Source={x:Static localization:LocalizationService.Current}}"
                                           Click="PopulationLimitEnabledCheckBox_Click" />
                                 <TextBox x:Name="PopulationLimitTextBox" Grid.Column="2"
                                          VerticalAlignment="Center"
-                                         AutomationProperties.Name="Limite de população" />
+                                         AutomationProperties.Name="{Binding [Automation.PopulationLimit], Source={x:Static localization:LocalizationService.Current}}" />
                             </Grid>
                         </Border>
                         <TextBlock Margin="4,8,4,12" TextWrapping="Wrap" Foreground="{StaticResource SecondaryText}"
-                                   Text="As alterações são aplicadas imediatamente e permanecem salvas para as próximas sessões." />
-                        <Button Width="190" HorizontalAlignment="Left" Click="SaveSettingsButton_Click" Content="SALVAR CONFIGURAÇÃO" />
+                                   Text="{Binding [Settings.PersistHint], Source={x:Static localization:LocalizationService.Current}}" />
+                        <Button Width="210" HorizontalAlignment="Left" Click="SaveSettingsButton_Click"
+                                Content="{Binding [Action.SaveSettings], Source={x:Static localization:LocalizationService.Current}}" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -272,7 +527,8 @@
         <Border Grid.Row="3" Background="{StaticResource InputBackground}" BorderBrush="{StaticResource PanelBorder}"
                 BorderThickness="1" Padding="10" Margin="0,12,0,0" CornerRadius="4">
             <TextBlock x:Name="EventText" Foreground="{StaticResource SecondaryText}"
-                       Text="Aguardando conexão." TextTrimming="CharacterEllipsis" />
+                       Text="{Binding [Status.WaitingConnection], Source={x:Static localization:LocalizationService.Current}}"
+                       TextTrimming="CharacterEllipsis" />
         </Border>
         </Grid>
     </DockPanel>

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Coh3Trainer.Interop;
+using Coh3Trainer.Localization;
 using Coh3Trainer.Models;
 
 namespace Coh3Trainer.Services;
@@ -10,12 +11,15 @@ public sealed class HotkeyService : IDisposable
 {
     private readonly nint _windowHandle;
     private readonly HwndSource _source;
+    private readonly ITextLocalizer _localizer;
     private readonly Dictionary<int, ResourceKind> _registrations = new();
 
-    public HotkeyService(nint windowHandle)
+    public HotkeyService(nint windowHandle, ITextLocalizer? localizer = null)
     {
         _windowHandle = windowHandle;
-        _source = HwndSource.FromHwnd(windowHandle) ?? throw new InvalidOperationException("Janela ainda não inicializada.");
+        _localizer = localizer ?? LocalizationService.Current;
+        _source = HwndSource.FromHwnd(windowHandle) ??
+                  throw new InvalidOperationException(_localizer.Get("Hotkey.WindowUnavailable"));
         _source.AddHook(WindowProc);
     }
 
@@ -32,14 +36,14 @@ public sealed class HotkeyService : IDisposable
             var keyName = settings.Resources[kind].Hotkey;
             if (!Enum.TryParse<Key>(keyName, true, out var key))
             {
-                errors.Add($"Tecla inválida para {kind.DisplayName()}: {keyName}");
+                errors.Add(_localizer.Get("Hotkey.Invalid", ResourceName(kind), keyName));
                 continue;
             }
 
             var virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
             if (!NativeMethods.RegisterHotKey(_windowHandle, id, NativeMethods.ModNoRepeat, virtualKey))
             {
-                errors.Add($"{keyName} já está em uso por outro programa.");
+                errors.Add(_localizer.Get("Hotkey.InUse", keyName));
                 continue;
             }
 
@@ -75,4 +79,6 @@ public sealed class HotkeyService : IDisposable
         UnregisterAll();
         _source.RemoveHook(WindowProc);
     }
+
+    private string ResourceName(ResourceKind kind) => _localizer.Get($"Resource.{kind}");
 }

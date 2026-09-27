@@ -1,90 +1,130 @@
-# Identificação automática de recursos
+# Automatic resource discovery
 
-Este documento registra a referência técnica usada pelo resolvedor automático e seus critérios de falha segura.
+This document records the technical basis of the automatic resolver and its fail-safe criteria.
 
-## Escopo
+## Scope
 
-- Campanha ou partida solo/privada contra IA, mesmo quando o jogo utiliza serviços online.
-- Alteração apenas de valores de recursos do jogador local.
-- Sem alteração dos arquivos do jogo e sem tentativa de contornar mecanismos de proteção.
-- Dois pequenos hooks temporários são instalados somente no processo local para capturar o objeto do jogador: a rotina principal e a fila de produção como fallback.
-- O trainer não inicia o jogo, não usa `-dev` e não modifica sua linha de comando.
+- Campaign or solo/private matches against AI, including sessions that use the game's online services.
+- Changes are limited to values owned by the local player.
+- Game files are not modified, and the trainer does not attempt to bypass protection mechanisms.
+- Two temporary hooks are installed in the local process to capture the player object: the primary player routine and the production queue as a fallback.
+- Veterancy, healing, and cooldown requests are consumed by the primary hook from the game's execution path. The trainer process does not invoke those native simulation functions directly.
+- The trainer does not launch the game, enable development mode, or alter its command line.
 
-## Referência pública
+## Public reference and local verification
 
-Uma tabela pública para a versão `2.5.2.48837` identifica as rotinas do jogador e da fila de produção por AOB e os seguintes campos `float` no objeto capturado:
+A public table for version `2.5.2.48837` identified player and production-queue routines by AOB and described these `float` fields in the captured player object:
 
-- `+0x682`: marcador usado para distinguir o jogador local;
+- `+0x682`: marker used to distinguish the local player;
 - `+0x6A8`: Fuel;
 - `+0x6AC`: Manpower;
-- `+0x6B0`: Munições.
+- `+0x6B0`: Munitions.
 
-A análise estática do executável instalado também localizou a telemetria `local_player_victory_points`. A rotina lê um `Int32` em `player + 0x438`, mas a inspeção dos scripts da condição de vitória demonstrou que esse campo representa a quantidade de pontos do mapa controlados pelo jogador, não os tickets restantes da equipe. Ele não deve ser escrito como placar. A descoberta pode ser reproduzida com `tools/analyze_victory_points.py`.
+Static analysis located the same complete signature exactly once in the installed `RelicCoH3.exe`, version `5.1.50313.0`. Runtime code still validates the signature before every installation or recovery; this static result is not treated as forward compatibility.
 
-Nos scripts `scar/winconditions/ticket_vp.scar` e `scar/winconditions/win_tickets.scar`, o placar autoritativo reside nas tabelas `_vp.teams[].tickets` e `_tickets.teams[].tickets`. As alterações são propagadas pela simulação através de `Core_CallDelegateFunctions("OnTicketsChanged", ...)`. Portanto, uma implementação correta precisa executar no contexto da thread de simulação ou usar uma condição de vitória personalizada; chamar o executor SCAR por uma thread externa não é seguro.
-
-A mesma assinatura foi localizada uma única vez no `RelicCoH3.exe` instalado durante o desenvolvimento, versão `5.1.50313.0`. Isso confirma compatibilidade estática, mas cada atualização continua sendo validada em tempo de execução.
-
-Referências:
+References:
 
 - https://www.gamepressure.com/download/company-of-heroes-3-final-stand-cheat-table-ct-v10-mod/z8157e6
 - https://vgtimes.com/games/company-of-heroes-3/files/88903-table-for-cheat-engine-2-1-5-38066.html
 - https://www.xbox.com/en-gb/games/store/company-of-heroes-3/9p014g2w3l83
 
-## Fluxo automático
+## Automatic connection flow
 
-1. Seleciona o processo `RelicCoH3.exe` com janela visível e maior conjunto de trabalho.
-2. Procura a assinatura no módulo principal e exige exatamente uma ocorrência.
-3. Confere byte a byte as instruções que serão substituídas.
-4. Instala stubs temporários que registram apenas o ponteiro do jogador local.
-5. Valida o marcador e os três recursos econômicos antes de vinculá-los.
-6. Antes de cada escrita de recurso econômico, valida a faixa e depois relê o valor gravado.
-7. Ao desconectar, restaura as instruções originais. A pequena alocação dos stubs permanece válida até o processo do jogo encerrar, evitando uma corrida entre threads durante a limpeza.
-8. Se o aplicativo tiver sido encerrado abruptamente, a próxima conexão somente recupera hooks cujo código corresponda exatamente aos stubs gerados pelo próprio trainer.
+1. Select the `RelicCoH3.exe` process with a visible window and the largest working set.
+2. Scan the main module and require exactly one occurrence of each signature.
+3. Compare every instruction that will be replaced.
+4. Allocate the capture and dispatcher area.
+5. Install temporary stubs that record only the local-player pointer and consume pending squad-action requests.
+6. Validate the local-player marker and all three economic resources before binding them.
+7. Before a resource write, validate its range; after writing, read it back for confirmation.
+8. On disconnect, restore the original instructions and population data.
+9. Keep the small executable allocation reserved until game termination to avoid a race with a stub that may still be executing.
+10. After an abnormal trainer exit, recover only hooks whose generated code matches exactly.
 
-## Falha segura
+## Fail-safe behavior
 
-O resolvedor recusa a conexão quando a assinatura não existe, aparece mais de uma vez ou as instruções esperadas mudaram. Nenhum endereço aproximado é aceito. Perfis opcionais continuam exigindo correspondência exata de versão e devem permanecer com `enabled: false` até serem validados separadamente.
+The resolver refuses a connection when a signature is absent, ambiguous, or has unexpected instructions. Approximate addresses are never accepted. Optional profiles require an exact executable version and remain disabled until independently validated.
 
-Victory Points estão desativados no build atual. Nenhum atalho é registrado e o recurso não é exposto na interface estável até existir uma integração que altere os tickets na thread de simulação. Essa recusa evita corromper o estado Lua/SCAR ou apresentar como sucesso uma alteração no campo incorreto.
+Version-sensitive features are not automatically carried forward to a new game build. Unsupported features remain disabled even when the basic economic-resource signature is still available.
 
-## Multiplicador de renda
+## Income multiplier
 
-O multiplicador não chama funções SCAR e não modifica a taxa interna da simulação. O trainer acompanha separadamente Manpower, Fuel e Munições a cada atualização:
+The income multiplier does not invoke SCAR and does not modify an internal simulation rate. It observes Manpower, Fuel, and Munitions independently:
 
-1. A primeira leitura estabelece a referência do recurso.
-2. Incrementos positivos de até 25 unidades por amostra são tratados como renda normal.
-3. O bônus aplicado é `incremento × (multiplicador - 1)`.
-4. Gastos, reduções e saltos maiores são ignorados.
-5. Escritas manuais feitas pelo trainer atualizam a referência e não são multiplicadas novamente.
+1. The first sample establishes the reference value.
+2. Positive increments up to 25 units per sample are treated as normal income.
+3. The applied bonus is `increment × (multiplier - 1)`.
+4. Spending, reductions, and larger jumps are ignored.
+5. Manual trainer writes update the reference and are not multiplied again.
 
-Essa estratégia é conservadora: evita executar código na thread de simulação e impede realimentação do próprio bônus. Se uma compra e um ganho ocorrerem dentro da mesma janela de 250 ms, somente o incremento líquido positivo pode ser identificado.
+This intentionally conservative strategy prevents feedback from the trainer's own writes. If spending and income occur in the same 250 ms sample, only their positive net change can be recognized.
 
-## Limite de população
+## Population cap
 
-Na versão `5.1.50313.0`, a análise estática dos bindings SCAR localizou estas rotinas:
+Static analysis of the SCAR bindings in version `5.1.50313.0` identified the following behavior:
 
-- `Player_GetPopCapOverride` encaminha para uma função que retorna `player + 0x50C`;
-- `Player_SetPopCapOverride` monta três valores `float` e copia os 12 bytes para `player + 0x50C`;
-- o primeiro valor é o teto de pessoal e os dois restantes recebem `FLT_MAX`, a sentinela usada pelo próprio jogo para as categorias não sobrescritas;
-- `Player_IsPopCapOverrideSet` compara o primeiro campo com a mesma sentinela.
+- `Player_GetPopCapOverride` returns data at `player + 0x50C`;
+- `Player_SetPopCapOverride` writes three `float` values, totaling 12 bytes, at `player + 0x50C`;
+- the first value is the personnel cap;
+- the other two values use `FLT_MAX`, the game's sentinel for categories that are not overridden;
+- `Player_IsPopCapOverrideSet` compares the first field with the same sentinel.
 
-O trainer reproduz apenas essa atribuição de dados, sem chamar SCAR nem criar threads no processo do jogo. Antes da primeira alteração, preserva os 12 bytes originais. A cada aplicação, relê e compara o bloco completo; ao desativar o recurso, restaura o bloco preservado. A escrita é recusada quando a versão não é exatamente a validada, o jogador local ainda não foi identificado ou o valor original não possui um layout plausível.
+The trainer reproduces only this data assignment. It preserves the original 12 bytes before the first change, confirms the complete block after every write, and restores the captured block when the feature is disabled or the trainer disconnects.
 
-A descoberta pode ser reproduzida sem anexar ao jogo:
+The feature is refused unless the executable version is exactly `5.1.50313.0`, the local player has been identified, and the original values form a plausible layout.
+
+The static analysis can be reproduced without attaching to the game:
 
 ```powershell
-py -3.13 .\tools\analyze_victory_points.py "C:\caminho\RelicCoH3.exe" --term Player_GetPopCapOverride
-py -3.13 .\tools\analyze_victory_points.py "C:\caminho\RelicCoH3.exe" --term Player_SetPopCapOverride
+py -3.13 .\tools\analyze_victory_points.py "C:\path\RelicCoH3.exe" --term Player_GetPopCapOverride
+py -3.13 .\tools\analyze_victory_points.py "C:\path\RelicCoH3.exe" --term Player_SetPopCapOverride
 ```
 
 ## Command Points
 
-Os scripts da versão `5.1.50313.0` usam `Player_GetResource(player, RT_Command)`, `Player_SetResource(player, RT_Command, valor)` e `Player_AddUnspentCommandPoints`. A análise do executável e a inspeção somente leitura do jogador local demonstraram que `RT_Command` ocupa o índice 3 nos dois conjuntos relevantes:
+Scripts in version `5.1.50313.0` use `Player_GetResource(player, RT_Command)`, `Player_SetResource(player, RT_Command, value)`, and `Player_AddUnspentCommandPoints`. Static analysis and read-only local-player inspection showed that `RT_Command` occupies index 3 in both relevant stores:
 
-- `player + 0x6A4`: valor corrente usado pelo estado de recursos;
-- `player + 0x188`: espelho consultado pelo binding SCAR de recursos.
+- `player + 0x6A4`: current resource value;
+- `player + 0x188`: mirror read by the SCAR resource binding.
 
-O limite absoluto validado é `32`, o mesmo máximo tunável referenciado nos scripts do jogo. Command Points não participam do multiplicador de renda. Ao adicionar pontos, o backend valida os dois valores, grava ambos, relê os dois e restaura os originais se qualquer etapa falhar. O recurso permanece indisponível em versões diferentes da validada.
+The validated absolute maximum is 32, matching the tunable maximum referenced by the game scripts. Command Points do not participate in the income multiplier.
 
-O utilitário `tools/inspect_live_player.py` reproduz a inspeção sem instalar hooks ou escrever no processo. Ele lê apenas o ponteiro deixado por uma instância já conectada do trainer e exibe os conjuntos de recursos usados na análise.
+The backend validates both values, writes both, reads both again, and restores the originals if any step fails. The feature remains unavailable on other executable versions.
+
+`tools/inspect_live_player.py` reproduces the read-only inspection. It reads the pointer left by an already connected trainer instance and displays the resource stores used during analysis; it does not install hooks or write to the process.
+
+## Veterancy, healing, and cooldowns
+
+The installed official `Data.sga` archive contains the Essence Engine bindings used by game scripts. For version `5.1.50313.0`, local static analysis identified and validated native entries for:
+
+- `Player_GetSquads`;
+- `Squad_IncreaseVeterancyRank`;
+- `Squad_SetHealth`;
+- `Squad_AdjustAbilityCooldown`.
+
+The trainer never calls these entries from a remote thread. It writes a compact request to its existing allocation. When the local-player routine reaches the hook from the game's execution path, a dispatcher:
+
+1. atomically claims one pending request;
+2. preserves the native register context;
+3. obtains up to 256 squads owned by the local player;
+4. validates the returned vector length and alignment;
+5. applies one requested operation to every squad;
+6. publishes the affected count and marks the request complete.
+
+The operations are:
+
+- veterancy: use the current rank plus one as the target rank;
+- healing: apply health fraction `1.0` to every squad member;
+- cooldowns: apply a sufficiently negative delta to reduce every positive remaining duration to zero.
+
+The interface reports the affected squad count, detects a player without available squads, and times out when the game does not consume the request. All four native instruction prefixes are checked before the actions become available.
+
+This player-owned enumeration replaced an earlier selection-based prototype. UI selection state is not reliable from the simulation-path hook.
+
+## Victory Point research
+
+Static analysis located `local_player_victory_points` and an `Int32` value at `player + 0x438`. Script inspection showed that this field represents the number of controlled Victory Point locations, not the team's remaining ticket score. It must not be written as a scoreboard value.
+
+In `scar/winconditions/ticket_vp.scar` and `scar/winconditions/win_tickets.scar`, authoritative scores are stored in `_vp.teams[].tickets` and `_tickets.teams[].tickets`. Changes are propagated by the simulation through `Core_CallDelegateFunctions("OnTicketsChanged", ...)`.
+
+Calling the SCAR executor from an external thread is unsafe. Victory Point modification therefore remains disabled until an implementation can update authoritative tickets in the correct simulation context or through a custom win condition.

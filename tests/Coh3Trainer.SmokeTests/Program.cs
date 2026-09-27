@@ -1,5 +1,6 @@
 using Coh3Trainer.Models;
 using Coh3Trainer.Services;
+using Coh3Trainer.Localization;
 
 var failures = new List<string>();
 
@@ -12,6 +13,28 @@ void Assert(bool condition, string message)
 }
 
 var defaults = TrainerSettings.Default();
+var localizer = LocalizationService.Current;
+foreach (var language in LocalizationService.SupportedLanguages)
+{
+    Assert(
+        localizer.GetMissingKeys(language.CultureName).Count == 0,
+        $"Catálogo de idioma completo: {language.CultureName}");
+}
+localizer.SetCulture("en-US");
+Assert(localizer.Get("Action.Connect") == "CONNECT", "Tradução em inglês");
+using (var localizedBackend = new MemoryTrainerBackend())
+{
+    Assert(localizedBackend.StatusMessage == "Game not connected.", "Status do backend em inglês");
+    localizer.SetCulture("es-ES");
+    Assert(localizedBackend.StatusMessage == "Juego no conectado.", "Troca dinâmica do status do backend");
+}
+localizer.SetCulture("zh-CN");
+Assert(localizer.Get("Action.Connect") == "连接", "Tradução em chinês simplificado");
+localizer.SetCulture("es-ES");
+Assert(localizer.Get("Action.Connect") == "CONECTAR", "Tradução em espanhol");
+localizer.SetCulture("pt-BR");
+Assert(localizer.Get("Action.Connect") == "CONECTAR", "Tradução em português do Brasil");
+Assert(LocalizationService.NormalizeCultureName("xx-XX") == "pt-BR", "Fallback de idioma para pt-BR");
 Assert(defaults.Resources[ResourceKind.Manpower].Hotkey == "F6", "Atalho padrão de Manpower");
 Assert(defaults.Resources[ResourceKind.Fuel].Hotkey == "F7", "Atalho padrão de Fuel");
 Assert(defaults.Resources[ResourceKind.Army].Hotkey == "F8", "Atalho padrão de Army");
@@ -24,6 +47,16 @@ Assert(defaults.PopulationLimit.Limit == 250, "Limite de população padrão");
 Assert(defaults.Resources.Count == 5, "Compatibilidade da configuração com os cinco recursos conhecidos");
 Assert(defaults.Resources.Keys.Count(TrainerSettings.EnabledResources.Contains) == 4, "Somente recursos estáveis estão habilitados");
 Assert(TrainerSettings.IncomeResources.Count == 3, "Command Points não participa do multiplicador de renda");
+
+var duplicateHotkeySettings = TrainerSettings.Default();
+duplicateHotkeySettings.Resources[ResourceKind.Fuel].Hotkey = "F6";
+duplicateHotkeySettings.Normalize();
+Assert(
+    TrainerSettings.EnabledResources
+        .Select(resource => duplicateHotkeySettings.Resources[resource].Hotkey)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Count() == TrainerSettings.EnabledResources.Count,
+    "Normalização corrige atalhos globais duplicados");
 
 var validator = new TrainerSettingsValidator();
 var validInputs = new Dictionary<ResourceKind, ResourceSettingsInput>
@@ -38,6 +71,11 @@ Assert(
     "Validação de configuração válida");
 Assert(defaults.Resources[ResourceKind.Manpower].Amount == 1500, "Aplicação da quantidade validada");
 Assert(defaults.PopulationLimit.Limit == 300, "Aplicação do limite de população validado");
+var incompleteInputs = new Dictionary<ResourceKind, ResourceSettingsInput>(validInputs);
+incompleteInputs.Remove(ResourceKind.CommandPoints);
+Assert(
+    !validator.TryApply(defaults, incompleteInputs, new PopulationLimitSettingsInput(true, "300"), out _),
+    "Rejeição de configuração incompleta");
 
 var amountBeforeInvalidInput = defaults.Resources[ResourceKind.Manpower].Amount;
 var invalidInputs = new Dictionary<ResourceKind, ResourceSettingsInput>
@@ -80,6 +118,18 @@ Assert(PlayerPopulationLayout.IsPlausibleOverride(populationOverride), "Validaç
 Assert(
     PlayerPopulationLayout.IsSupportedVersion("5.1.50313.0"),
     "Versão validada para limite de população");
+var unitActionLayout = PlayerSquadActionLayout.ForVersion("5.1.50313.0");
+Assert(unitActionLayout is not null, "Versão validada para ações de unidades");
+Assert(
+    PlayerSquadActionLayout.ForVersion("5.1.50314.0") is null,
+    "Ações de unidades recusam versões não validadas");
+Assert(unitActionLayout?.GetPlayerSquadsRva == 0x2AACE30, "RVA dos esquadrões do jogador local");
+Assert(unitActionLayout?.IncreaseVeterancyRankRva == 0x2AF5590, "RVA de veterania");
+Assert(unitActionLayout?.SetHealthRva == 0x2AF8070, "RVA de cura");
+Assert(unitActionLayout?.AdjustAbilityCooldownRva == 0x2AEC0C0, "RVA de cooldown");
+Assert(
+    Enum.GetValues<PlayerSquadAction>().Length == 3,
+    "Veterania, cura e cooldown são as ações selecionáveis");
 
 Assert(TrainerConnectionState.Connected.IsConnected(), "Estado conectado reconhecido");
 Assert(TrainerConnectionState.Ready.IsConnected(), "Estado pronto reconhecido");
@@ -103,6 +153,56 @@ Assert(
     "Command Points não são tratados como renda");
 Assert(!incomeTracker.Configure(4), "Multiplicadores não suportados são rejeitados");
 
+var dashboardTracker = new MatchDashboardTracker();
+var dashboardStart = new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero);
+var firstDashboardSample = new Dictionary<ResourceKind, double?>
+{
+    [ResourceKind.Manpower] = 100,
+    [ResourceKind.Fuel] = 50,
+    [ResourceKind.Army] = 25,
+    [ResourceKind.CommandPoints] = 2
+};
+var firstDashboardSnapshot = dashboardTracker.Update(dashboardStart, firstDashboardSample);
+Assert(firstDashboardSnapshot.HasLiveData, "Painel reconhece telemetria válida da partida");
+Assert(firstDashboardSnapshot.Elapsed == TimeSpan.Zero, "Painel inicia o tempo observado na primeira amostra");
+Assert(
+    firstDashboardSnapshot.NetPerMinute.Values.All(value => !value.HasValue),
+    "Painel aguarda intervalo mínimo antes de calcular variações");
+
+var secondDashboardSample = new Dictionary<ResourceKind, double?>(firstDashboardSample)
+{
+    [ResourceKind.Manpower] = 110,
+    [ResourceKind.Fuel] = 45,
+    [ResourceKind.CommandPoints] = 3
+};
+var secondDashboardSnapshot = dashboardTracker.Update(
+    dashboardStart.AddSeconds(10),
+    secondDashboardSample);
+Assert(secondDashboardSnapshot.Elapsed == TimeSpan.FromSeconds(10), "Painel acompanha o tempo observado");
+Assert(
+    Math.Abs(secondDashboardSnapshot.NetPerMinute[ResourceKind.Manpower]!.Value - 60) < 0.001,
+    "Painel calcula ganho líquido de Manpower por minuto");
+Assert(
+    Math.Abs(secondDashboardSnapshot.NetPerMinute[ResourceKind.Fuel]!.Value + 30) < 0.001,
+    "Painel calcula gasto líquido de Fuel por minuto");
+Assert(
+    Math.Abs(secondDashboardSnapshot.NetPerMinute[ResourceKind.CommandPoints]!.Value - 6) < 0.001,
+    "Painel calcula variação de Command Points por minuto");
+
+var missingDashboardSample = new Dictionary<ResourceKind, double?>
+{
+    [ResourceKind.Manpower] = null,
+    [ResourceKind.Fuel] = null,
+    [ResourceKind.Army] = null,
+    [ResourceKind.CommandPoints] = null
+};
+var lostDashboardSnapshot = dashboardTracker.Update(
+    dashboardStart.AddSeconds(16),
+    missingDashboardSample);
+Assert(!lostDashboardSnapshot.HasSession, "Painel encerra a sessão após perda prolongada de telemetria");
+dashboardTracker.Reset();
+Assert(!dashboardTracker.Current.HasSession, "Painel reinicia o estado da sessão");
+
 var testRoot = Path.Combine(Path.GetTempPath(), "Coh3TrainerSmokeTests", Guid.NewGuid().ToString("N"));
 try
 {
@@ -110,6 +210,7 @@ try
     var store = new SettingsStore(paths);
     defaults.Resources[ResourceKind.Fuel].Amount = 321;
     defaults.Resources[ResourceKind.CommandPoints].Amount = 7;
+    defaults.Culture = "zh-CN";
     defaults.IncomeMultiplier = 3;
     defaults.PopulationLimit.Enabled = true;
     defaults.PopulationLimit.Limit = 500;
@@ -117,6 +218,7 @@ try
     var loaded = store.Load();
     Assert(loaded.Resources[ResourceKind.Fuel].Amount == 321, "Persistência das configurações");
     Assert(loaded.Resources[ResourceKind.CommandPoints].Amount == 7, "Persistência de Command Points");
+    Assert(loaded.Culture == "zh-CN", "Persistência do idioma selecionado");
     Assert(loaded.IncomeMultiplier == 3, "Persistência do multiplicador de renda");
     Assert(loaded.PopulationLimit.Enabled, "Persistência da ativação do limite de população");
     Assert(loaded.PopulationLimit.Limit == 500, "Persistência do limite de população");

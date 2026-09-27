@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <!-- Tema chumbo: superfícies em cinza escuro e toda tipografia em branco. -->
+        <!-- Charcoal theme: dark gray surfaces with high-contrast white typography. -->
         <SolidColorBrush x:Key="WindowBackground" Color="#2E3238" />
         <SolidColorBrush x:Key="PanelBackground" Color="#3A3F47" />
         <SolidColorBrush x:Key="PanelElevated" Color="#484E57" />

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Coh3Trainer.Interop;
+using Coh3Trainer.Localization;
 using Coh3Trainer.Models;
 using Microsoft.Win32.SafeHandles;
 
@@ -21,6 +22,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
 
     private readonly ProfileRepository _profiles;
     private readonly IncomeMultiplierTracker _incomeTracker;
+    private readonly ITextLocalizer _localizer;
     private readonly SemaphoreSlim _memoryLock = new(1, 1);
     private readonly object _populationConfigurationLock = new();
     private readonly Dictionary<ResourceKind, BoundResource> _resources = new();
@@ -32,17 +34,21 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
     private nint _populationPlayerAddress;
     private byte[]? _originalPopulationOverride;
     private bool _populationOverrideWasApplied;
+    private string _statusKey = "Backend.Disconnected";
+    private object[] _statusArguments = [];
 
     public MemoryTrainerBackend(
         ProfileRepository? profiles = null,
-        IncomeMultiplierTracker? incomeTracker = null)
+        IncomeMultiplierTracker? incomeTracker = null,
+        ITextLocalizer? localizer = null)
     {
         _profiles = profiles ?? new ProfileRepository();
         _incomeTracker = incomeTracker ?? new IncomeMultiplierTracker();
+        _localizer = localizer ?? LocalizationService.Current;
     }
 
     public TrainerConnectionState State { get; private set; } = TrainerConnectionState.Disconnected;
-    public string StatusMessage { get; private set; } = "Jogo não conectado.";
+    public string StatusMessage => _localizer.Get(_statusKey, _statusArguments);
     public string GameVersion { get; private set; } = "—";
     public double IncomeMultiplier => _incomeTracker.Multiplier;
     public bool PopulationLimitEnabled
@@ -101,13 +107,16 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         }
     }
 
+    public bool SupportsPlayerSquadActions =>
+        _automaticLocator?.SupportsPlayerSquadActions == true;
+
     public bool HasProfile { get; private set; }
 
     public Task<TrainerResult> ConnectAsync()
     {
         Disconnect();
         State = TrainerConnectionState.Connecting;
-        StatusMessage = "Localizando o Company of Heroes 3...";
+        SetStatus("Backend.Locating");
         return Task.Run(ConnectCore);
     }
 
@@ -117,7 +126,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         if (processes.Length == 0)
         {
             State = TrainerConnectionState.Error;
-            StatusMessage = "Company of Heroes 3 não encontrado. Abra o jogo e tente novamente.";
+            SetStatus("Backend.NotFound");
             return TrainerResult.Fail(StatusMessage);
         }
 
@@ -130,8 +139,8 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         try
         {
             var mainModule = _process.MainModule
-                ?? throw new InvalidOperationException("O módulo principal do jogo não está disponível.");
-            GameVersion = mainModule.FileVersionInfo.FileVersion ?? "desconhecida";
+                ?? throw new InvalidOperationException(_localizer.Get("Backend.MainModuleUnavailable"));
+            GameVersion = mainModule.FileVersionInfo.FileVersion ?? _localizer.Get("Backend.UnknownVersion");
             _handle = NativeMethods.OpenProcess(RequiredAccess, false, _process.Id);
             if (_handle.IsInvalid)
             {
@@ -144,11 +153,16 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
             {
                 BindProfile(profile);
                 State = TrainerConnectionState.Ready;
-                StatusMessage = "Pronto — recursos disponíveis.";
+                SetStatus("Backend.Ready");
                 return TrainerResult.Ok(StatusMessage);
             }
 
-            _automaticLocator = new PlayerSignatureLocator(_process, _handle, mainModule);
+            _automaticLocator = new PlayerSignatureLocator(
+                _process,
+                _handle,
+                mainModule,
+                PlayerSquadActionLayout.ForVersion(GameVersion),
+                _localizer);
             var installation = _automaticLocator.Install();
             if (!installation.Success)
             {
@@ -156,7 +170,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
             }
 
             State = TrainerConnectionState.Connected;
-            StatusMessage = "Jogo conectado — aguardando uma partida.";
+            SetStatus("Backend.ConnectedWaiting");
             TryBindAutomaticResources();
             return TrainerResult.Ok(StatusMessage);
         }
@@ -164,7 +178,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         {
             Disconnect();
             State = TrainerConnectionState.Error;
-            StatusMessage = $"Falha na conexão: {ex.Message}";
+            SetStatus("Backend.ConnectionFailed", ex.Message);
             return TrainerResult.Fail(StatusMessage);
         }
     }
@@ -206,7 +220,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         if (!IsReady())
         {
             MarkProcessEndedIfNecessary();
-            return TrainerResult.Fail("O jogo não está conectado.");
+            return TrainerResult.Fail(_localizer.Get("Backend.Disconnected"));
         }
 
         await _memoryLock.WaitAsync();
@@ -215,32 +229,87 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
             TryBindAutomaticResources();
             if (!_resources.TryGetValue(resource, out var bound))
             {
-                return TrainerResult.Fail(
-                    $"{resource.DisplayName()} ainda não foi identificado. Entre em uma partida e tente novamente.");
+                return TrainerResult.Fail(_localizer.Get(
+                    "Backend.ResourceNotIdentified",
+                    ResourceName(resource)));
             }
 
             if (!TryReadBoundNumber(bound, out var current) ||
                 current < bound.Minimum || current > bound.Maximum)
             {
-                return TrainerResult.Fail("Leitura fora da faixa segura; escrita cancelada.");
+                return TrainerResult.Fail(_localizer.Get("Backend.UnsafeRead"));
             }
 
             var desired = Math.Clamp(current + amount, bound.Minimum, bound.Maximum);
             if (!TryWriteBoundNumber(bound, desired, out var confirmed))
             {
-                return TrainerResult.Fail($"Falha ao escrever: {new Win32Exception(Marshal.GetLastWin32Error()).Message}");
+                return TrainerResult.Fail(_localizer.Get(
+                    "Backend.WriteFailed",
+                    new Win32Exception(Marshal.GetLastWin32Error()).Message));
             }
 
             if (Math.Abs(confirmed - desired) > (bound.ValueType == ResourceValueType.Single ? 0.1 : 0))
             {
-                return TrainerResult.Fail("O jogo não confirmou o novo valor.");
+                return TrainerResult.Fail(_localizer.Get("Backend.NotConfirmed"));
             }
 
             _incomeTracker.Confirm(resource, confirmed);
             var applied = confirmed - current;
             return applied <= (bound.ValueType == ResourceValueType.Single ? 0.1 : 0)
-                ? TrainerResult.Ok($"{resource.DisplayName()} já está no limite de {confirmed:N0}.")
-                : TrainerResult.Ok($"+{applied:N0} em {resource.DisplayName()}; novo valor: {confirmed:N0}.");
+                ? TrainerResult.Ok(_localizer.Get("Backend.AtLimit", ResourceName(resource), confirmed))
+                : TrainerResult.Ok(_localizer.Get("Backend.Added", applied, ResourceName(resource), confirmed));
+        }
+        finally
+        {
+            _memoryLock.Release();
+        }
+    }
+
+    public async Task<TrainerResult> ExecutePlayerSquadActionAsync(PlayerSquadAction action)
+    {
+        if (!IsReady())
+        {
+            MarkProcessEndedIfNecessary();
+            return TrainerResult.Fail(_localizer.Get("Backend.Disconnected"));
+        }
+
+        if (_automaticLocator is not { SupportsPlayerSquadActions: true } locator)
+        {
+            return TrainerResult.Fail(_localizer.Get(
+                "Backend.UnitActionsUnsupported",
+                GameVersion));
+        }
+
+        await _memoryLock.WaitAsync();
+        try
+        {
+            var (completed, affectedCount) = await locator.ExecutePlayerSquadActionAsync(action);
+            if (!completed)
+            {
+                return TrainerResult.Fail(_localizer.Get("Backend.UnitActionTimedOut"));
+            }
+
+            if (affectedCount == 0)
+            {
+                return TrainerResult.Fail(_localizer.Get("Backend.NoSquadsAvailable"));
+            }
+
+            var messageKey = action switch
+            {
+                PlayerSquadAction.PromoteVeterancy => "Backend.VeterancyApplied",
+                PlayerSquadAction.Heal => "Backend.HealApplied",
+                PlayerSquadAction.ResetCooldowns => "Backend.CooldownsApplied",
+                _ => throw new ArgumentOutOfRangeException(nameof(action), action, null)
+            };
+            return TrainerResult.Ok(_localizer.Get(messageKey, affectedCount));
+        }
+        catch (OperationCanceledException)
+        {
+            return TrainerResult.Fail(_localizer.Get("Backend.UnitActionTimedOut"));
+        }
+        catch (Win32Exception ex)
+        {
+            return TrainerResult.Fail(_localizer.Get("Backend.WriteFailed", ex.Message));
         }
         finally
         {
@@ -252,20 +321,22 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
     {
         if (!_incomeTracker.Configure(multiplier))
         {
-            return TrainerResult.Fail("Selecione um multiplicador de renda válido.");
+            return TrainerResult.Fail(_localizer.Get("Validation.SelectIncome"));
         }
 
         return TrainerResult.Ok(multiplier <= 1
-            ? "Renda normal restaurada."
-            : $"Multiplicador de renda {multiplier:0.#}x ativado.");
+            ? _localizer.Get("Backend.IncomeRestored")
+            : _localizer.Get("Backend.IncomeActivated", multiplier));
     }
 
     public TrainerResult ConfigurePopulationLimit(bool enabled, int limit)
     {
         if (!PopulationLimitRules.IsValidLimit(limit))
         {
-            return TrainerResult.Fail(
-                $"O limite de população deve estar entre {PopulationLimitRules.MinimumLimit} e {PopulationLimitRules.MaximumLimit}.");
+            return TrainerResult.Fail(_localizer.Get(
+                "Validation.PopulationRange",
+                PopulationLimitRules.MinimumLimit,
+                PopulationLimitRules.MaximumLimit));
         }
 
         lock (_populationConfigurationLock)
@@ -276,16 +347,17 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
 
         if (!enabled)
         {
-            return TrainerResult.Ok("Limite de população padrão selecionado.");
+            return TrainerResult.Ok(_localizer.Get("Backend.PopDefault"));
         }
 
         return PopulationLimitState == Services.PopulationLimitState.Unsupported
-            ? TrainerResult.Ok($"Limite salvo, mas ainda não compatível com a versão {GameVersion}.")
-            : TrainerResult.Ok($"Limite de população configurado em {limit:N0}.");
+            ? TrainerResult.Ok(_localizer.Get("Backend.PopUnsupported", GameVersion))
+            : TrainerResult.Ok(_localizer.Get("Backend.PopConfigured", limit));
     }
 
     public void Disconnect()
     {
+        TryRestorePopulationOverride();
         _resources.Clear();
         _incomeTracker.ResetObservations();
         ResetPopulationSession();
@@ -297,8 +369,40 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         _process?.Dispose();
         _process = null;
         State = TrainerConnectionState.Disconnected;
-        StatusMessage = "Jogo não conectado.";
+        SetStatus("Backend.Disconnected");
         GameVersion = "—";
+    }
+
+    private void TryRestorePopulationOverride()
+    {
+        nint playerAddress;
+        byte[]? originalOverride;
+        bool wasApplied;
+        lock (_populationConfigurationLock)
+        {
+            playerAddress = _populationPlayerAddress;
+            originalOverride = _originalPopulationOverride;
+            wasApplied = _populationOverrideWasApplied;
+        }
+
+        if (!wasApplied ||
+            playerAddress == nint.Zero ||
+            originalOverride is null ||
+            _handle is not { IsInvalid: false, IsClosed: false })
+        {
+            return;
+        }
+
+        var overrideAddress = playerAddress + PlayerPopulationLayout.OverrideOffset;
+        if (TryWriteBytes(overrideAddress, originalOverride) &&
+            TryReadBytes(overrideAddress, PlayerPopulationLayout.OverrideSize, out var confirmed) &&
+            PlayerPopulationLayout.Matches(confirmed, originalOverride))
+        {
+            lock (_populationConfigurationLock)
+            {
+                _populationOverrideWasApplied = false;
+            }
+        }
     }
 
     private static Process SelectGameProcess(IEnumerable<Process> processes) => processes
@@ -338,7 +442,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         }
 
         Disconnect();
-        StatusMessage = "O jogo foi fechado. Conecte novamente quando estiver pronto.";
+        SetStatus("Backend.GameClosed");
     }
 
     private void TryBindAutomaticResources()
@@ -373,7 +477,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
         if (identifiedAnyResource)
         {
             State = TrainerConnectionState.Ready;
-            StatusMessage = "Pronto — recursos disponíveis.";
+            SetStatus("Backend.Ready");
         }
     }
 
@@ -536,7 +640,7 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
     {
         var module = _process!.Modules.Cast<ProcessModule>()
             .FirstOrDefault(x => string.Equals(x.ModuleName, profile.ModuleName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"Módulo {profile.ModuleName} não encontrado.");
+            ?? throw new InvalidOperationException(_localizer.Get("Backend.ModuleNotFound", profile.ModuleName));
 
         foreach (var (kind, locator) in profile.Resources)
         {
@@ -545,7 +649,9 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
             {
                 if (!TryReadPointer(address, out var pointer) || pointer == nint.Zero)
                 {
-                    throw new InvalidOperationException($"Cadeia de ponteiros inválida para {kind.DisplayName()}.");
+                    throw new InvalidOperationException(_localizer.Get(
+                        "Backend.PointerInvalid",
+                        ResourceName(kind)));
                 }
                 address = checked(pointer + (nint)ParseHex(pointerOffset));
             }
@@ -553,12 +659,22 @@ public sealed class MemoryTrainerBackend : ITrainerBackend
             if (!TryReadNumber(address, locator.ValueType, out var current) ||
                 current < locator.Minimum || current > locator.Maximum)
             {
-                throw new InvalidOperationException($"Valor inicial inválido para {kind.DisplayName()}.");
+                throw new InvalidOperationException(_localizer.Get(
+                    "Backend.InitialValueInvalid",
+                    ResourceName(kind)));
             }
 
             _resources[kind] = new BoundResource(address, locator.ValueType, locator.Minimum, locator.Maximum);
         }
     }
+
+    private void SetStatus(string key, params object[] arguments)
+    {
+        _statusKey = key;
+        _statusArguments = arguments;
+    }
+
+    private string ResourceName(ResourceKind kind) => _localizer.Get($"Resource.{kind}");
 
     private bool TryReadByte(nint address, out byte value)
     {
